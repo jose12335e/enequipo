@@ -5,6 +5,28 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  build: {
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router-dom')) {
+            return 'react'
+          }
+          if (id.includes('node_modules/@supabase')) return 'supabase'
+          if (id.includes('node_modules/recharts')) return 'charts'
+          if (
+            id.includes('node_modules/react-hook-form') ||
+            id.includes('node_modules/@hookform') ||
+            id.includes('node_modules/zod')
+          ) {
+            return 'forms'
+          }
+          return undefined
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

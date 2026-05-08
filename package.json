@@ -2,6 +2,7 @@
   "name": "doulife",
   "private": true,
   "version": "0.0.0",
+  "description": "Shared couple life app built with React, Vite, TypeScript and Supabase.",
   "type": "module",
   "scripts": {
     "dev": "vite",
