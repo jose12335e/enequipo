@@ -9,6 +9,7 @@ import { loginSchema, type LoginInput } from '../lib/validations/auth'
 import { signIn } from '../services/authService'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
+import { friendlyAuthError } from '../utils/authErrors'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -29,7 +30,7 @@ export function LoginPage() {
       pushToast({ type: 'success', title: 'Sesión iniciada' })
       navigate('/app/dashboard', { replace: true })
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos iniciar sesión', description: (error as Error).message })
+      pushToast({ type: 'error', title: 'No pudimos iniciar sesión', description: friendlyAuthError(error) })
     } finally {
       setSubmitting(false)
     }

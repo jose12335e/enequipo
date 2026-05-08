@@ -8,6 +8,7 @@ import { Input } from '../components/Input'
 import { registerSchema, type RegisterInput } from '../lib/validations/auth'
 import { signUp } from '../services/authService'
 import { useToastStore } from '../store/toastStore'
+import { friendlyAuthError } from '../utils/authErrors'
 
 export function RegisterPage() {
   const navigate = useNavigate()
@@ -30,7 +31,7 @@ export function RegisterPage() {
       })
       navigate('/login', { replace: true })
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos registrarte', description: (error as Error).message })
+      pushToast({ type: 'error', title: 'No pudimos registrarte', description: friendlyAuthError(error) })
     } finally {
       setSubmitting(false)
     }

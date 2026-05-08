@@ -22,14 +22,26 @@ Si ya había usuarios antes del trigger, el script hace backfill.
 
 Para producción, usa una de estas dos opciones:
 
-- Email confirmation activado y bien configurado con Site URL y Redirect URLs.
-- Email confirmation desactivado mientras pruebas con usuarios reales.
+- Para pruebas públicas sin SMTP propio: desactiva `Confirm email`.
+- Para producción real: activa `Confirm email` y configura un SMTP propio.
 
 Si Supabase bloquea emails por rate limit, crea usuarios desde:
 
 `Authentication -> Users -> Add user`
 
 Activa `Auto Confirm User`.
+
+### Configuración recomendada ahora
+
+Mientras no tengas SMTP propio:
+
+1. Ve a `Authentication -> Sign In / Providers`.
+2. Abre `Email`.
+3. Deja `Enable Email provider` activado.
+4. Desactiva `Confirm email`.
+5. Guarda.
+
+Con esto Supabase no necesita enviar email de confirmación al registrarse y los usuarios pueden entrar inmediatamente.
 
 ## 4. Parejas
 
