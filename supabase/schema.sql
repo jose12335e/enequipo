@@ -223,8 +223,12 @@ begin
   where invite_code = upper(trim(raw_invite_code))
   limit 1;
 
-  if target_couple.id is null or target_couple.created_at < now() - interval '48 hours' then
-    raise exception 'Código de invitación inválido o expirado.';
+  if target_couple.id is null then
+    raise exception 'Código de invitación inválido.';
+  end if;
+
+  if target_couple.created_at < now() - interval '48 hours' then
+    raise exception 'Código de invitación expirado.';
   end if;
 
   select count(*)

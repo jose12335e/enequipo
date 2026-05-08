@@ -65,6 +65,14 @@ La app no consulta `couples` directamente para unirse. Usa:
 
 Esto existe porque RLS no debe permitir que cualquier persona lea parejas por código.
 
+Si una persona ve `Código de invitación inválido` o `Código de invitación expirado` cuando el código parece correcto, revisar:
+
+1. Que el SQL más reciente esté ejecutado en Supabase.
+2. Que Vercel tenga desplegado el commit más reciente.
+3. Que el usuario B no tenga ya un `couple_id`.
+4. Que el código corresponda exactamente al `invite_code` activo.
+5. Que `created_at + 48 hours` todavía sea mayor que `now()`.
+
 ## 5. RLS
 
 Todas las tablas tienen RLS activo.
