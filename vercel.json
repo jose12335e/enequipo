@@ -1,8 +1,7 @@
 {
-  "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/((?!assets|favicon.svg|manifest.webmanifest|registerSW.js|sw.js|workbox-.*).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
