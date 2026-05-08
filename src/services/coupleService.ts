@@ -55,3 +55,14 @@ export async function unlinkCouple(coupleId: string) {
   const { error } = await supabase.rpc('unlink_couple', { target_couple_id: coupleId })
   if (error) throw error
 }
+
+export async function updateCoupleAvatar(coupleId: string, avatarUrl: string) {
+  const { data, error } = await supabase
+    .from('couples')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', coupleId)
+    .select()
+    .single()
+  if (error) throw error
+  return data as Couple
+}

@@ -1,7 +1,7 @@
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import type { TaskInput } from '../lib/validations/tasks'
 import { supabase } from '../lib/supabase'
-import type { TaskItem } from '../types/app'
+import type { TaskItem, TaskStatus } from '../types/app'
 
 export async function listTasks(coupleId: string) {
   const { data, error } = await supabase
@@ -22,6 +22,7 @@ export async function createTask(coupleId: string, userId: string, input: TaskIn
       description: input.description || null,
       priority: input.priority,
       status: input.status,
+      status_note: null,
       due_date: input.due_date || null,
       assigned_to: input.assigned_to || null,
       created_by: userId,
@@ -30,6 +31,21 @@ export async function createTask(coupleId: string, userId: string, input: TaskIn
     .single()
   if (error) throw error
   return data
+}
+
+export async function updateTaskStatus(id: string, status: TaskStatus, statusNote?: string | null) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({
+      status,
+      status_note: status === 'not_done' || status === 'postponed' ? statusNote : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data as TaskItem
 }
 
 export async function updateTask(id: string, input: Partial<TaskInput>) {

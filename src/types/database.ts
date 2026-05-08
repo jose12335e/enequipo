@@ -23,13 +23,13 @@ export interface Database {
       }
       couples: {
         Row: Couple
-        Insert: Insert<Couple, 'created_at'>
+        Insert: Insert<Couple, 'id' | 'created_at' | 'avatar_url'>
         Update: Update<Couple>
         Relationships: []
       }
       events: {
         Row: EventItem
-        Insert: Insert<EventItem, 'id' | 'created_at' | 'updated_at' | 'is_shared'>
+        Insert: Insert<EventItem, 'id' | 'created_at' | 'updated_at' | 'is_shared' | 'actor_type' | 'status' | 'status_note'>
         Update: Update<EventItem>
         Relationships: []
       }
@@ -41,7 +41,7 @@ export interface Database {
       }
       tasks: {
         Row: TaskItem
-        Insert: Insert<TaskItem, 'id' | 'created_at' | 'updated_at' | 'status'>
+        Insert: Insert<TaskItem, 'id' | 'created_at' | 'updated_at' | 'status' | 'status_note'>
         Update: Update<TaskItem>
         Relationships: []
       }

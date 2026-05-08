@@ -10,9 +10,13 @@ export interface UserProfile {
 export interface Couple {
   id: string
   invite_code: string
+  avatar_url: string | null
   created_by: string
   created_at: string
 }
+
+export type EventActorType = 'user' | 'couple'
+export type EventStatus = 'pending' | 'done' | 'not_done' | 'postponed'
 
 export interface EventItem {
   id: string
@@ -24,6 +28,9 @@ export interface EventItem {
   location: string | null
   color: string | null
   is_shared: boolean
+  actor_type: EventActorType
+  status: EventStatus
+  status_note: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -42,7 +49,7 @@ export interface Note {
 }
 
 export type TaskPriority = 'low' | 'medium' | 'high'
-export type TaskStatus = 'pending' | 'in_progress' | 'done'
+export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'not_done' | 'postponed'
 
 export interface TaskItem {
   id: string
@@ -51,6 +58,7 @@ export interface TaskItem {
   description: string | null
   priority: TaskPriority | null
   status: TaskStatus
+  status_note: string | null
   due_date: string | null
   assigned_to: string | null
   created_by: string

@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, Clock3, ListTodo, Plus, RotateCcw, Trash2, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
@@ -8,18 +8,53 @@ import { EmptyState } from '../components/EmptyState'
 import { Input, Select, Textarea } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
+import { useCoupleRequired } from '../hooks/useCoupleRequired'
 import { taskSchema, type TaskInput } from '../lib/validations/tasks'
-import { createTask, deleteTask, listTasks, subscribeToTasks, updateTask } from '../services/tasksService'
+import { createTask, deleteTask, listTasks, subscribeToTasks, updateTaskStatus } from '../services/tasksService'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
-import type { TaskItem, UserProfile } from '../types/app'
+import type { TaskItem, TaskStatus, UserProfile } from '../types/app'
 import { cn } from '../utils/cn'
 import { formatDate } from '../utils/format'
-import { useCoupleRequired } from '../hooks/useCoupleRequired'
+
+const taskStatusMeta: Record<TaskStatus, { label: string; className: string; cardClassName: string; icon: typeof Clock3 }> = {
+  pending: {
+    label: 'Pendiente',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-300/15 dark:text-amber-100',
+    cardClassName: 'border-amber-200 bg-amber-50/75 dark:border-amber-300/20 dark:bg-amber-300/10',
+    icon: Clock3,
+  },
+  in_progress: {
+    label: 'En progreso',
+    className: 'bg-lavender-100 text-lavender-800 dark:bg-lavender-300/15 dark:text-lavender-100',
+    cardClassName: 'border-lavender-200 bg-lavender-50/75 dark:border-lavender-300/20 dark:bg-lavender-300/10',
+    icon: ListTodo,
+  },
+  done: {
+    label: 'Hecha',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-300/15 dark:text-emerald-100',
+    cardClassName: 'border-emerald-200 bg-emerald-50/75 dark:border-emerald-300/20 dark:bg-emerald-300/10',
+    icon: CheckCircle2,
+  },
+  not_done: {
+    label: 'No realizada',
+    className: 'bg-red-100 text-red-800 dark:bg-red-300/15 dark:text-red-100',
+    cardClassName: 'border-red-200 bg-red-50/75 dark:border-red-300/20 dark:bg-red-300/10',
+    icon: XCircle,
+  },
+  postponed: {
+    label: 'Pospuesta',
+    className: 'bg-sky-100 text-sky-800 dark:bg-sky-300/15 dark:text-sky-100',
+    cardClassName: 'border-sky-200 bg-sky-50/75 dark:border-sky-300/20 dark:bg-sky-300/10',
+    icon: RotateCcw,
+  },
+}
+
+const taskStatusActions: TaskStatus[] = ['pending', 'in_progress', 'done', 'not_done', 'postponed']
 
 function assigneeLabel(task: TaskItem, profile: UserProfile | null, partner: UserProfile | null) {
   if (!task.assigned_to) return 'Sin asignar'
-  if (task.assigned_to === profile?.id) return profile.full_name ?? 'Tú'
+  if (task.assigned_to === profile?.id) return profile.full_name ?? 'Tu'
   if (task.assigned_to === partner?.id) return partner.full_name ?? 'Tu pareja'
   return 'Usuario no disponible'
 }
@@ -33,6 +68,8 @@ export function TasksPage() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [statusTarget, setStatusTarget] = useState<{ task: TaskItem; status: TaskStatus } | null>(null)
+  const [statusNote, setStatusNote] = useState('')
   const {
     register,
     handleSubmit,
@@ -72,14 +109,56 @@ export function TasksPage() {
     }
   }
 
-  async function markDone(task: TaskItem) {
-    await updateTask(task.id, { status: task.status === 'done' ? 'pending' : 'done' })
-    pushToast({ type: 'success', title: task.status === 'done' ? 'Tarea reabierta' : 'Tarea completada' })
+  async function saveTaskStatus(task: TaskItem, status: TaskStatus, note?: string | null) {
+    setBusy(true)
+    try {
+      const updated = await updateTaskStatus(task.id, status, note)
+      setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      pushToast({ type: 'success', title: 'Estado actualizado' })
+    } catch (error) {
+      pushToast({ type: 'error', title: 'No pudimos actualizar la tarea', description: (error as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleStatusClick(task: TaskItem, status: TaskStatus) {
+    if (status === 'not_done' || status === 'postponed') {
+      setStatusTarget({ task, status })
+      setStatusNote(task.status === status ? (task.status_note ?? '') : '')
+      return
+    }
+
+    void saveTaskStatus(task, status, null)
+  }
+
+  async function submitStatusNote() {
+    if (!statusTarget) return
+    const note = statusNote.trim()
+    if (!note) {
+      pushToast({ type: 'error', title: 'Agrega un detalle', description: 'Este estado necesita una razon para guardarse.' })
+      return
+    }
+
+    await saveTaskStatus(statusTarget.task, statusTarget.status, note)
+    setStatusTarget(null)
+    setStatusNote('')
   }
 
   async function removeTask(task: TaskItem) {
     await deleteTask(task.id)
     pushToast({ type: 'success', title: 'Tarea eliminada' })
+  }
+
+  function TaskStatusBadge({ task }: { task: TaskItem }) {
+    const meta = taskStatusMeta[task.status]
+    const Icon = meta.icon
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${meta.className}`}>
+        <Icon size={13} />
+        {meta.label}
+      </span>
+    )
   }
 
   if (!hasCouple) {
@@ -98,7 +177,7 @@ export function TasksPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-stone-950 dark:text-white">Tareas</h1>
-          <p className="mt-1 text-stone-600 dark:text-stone-300">Pendientes, responsables y prioridades compartidas.</p>
+          <p className="mt-1 text-stone-600 dark:text-stone-300">Responsables, estados y prioridades compartidas.</p>
         </div>
         <Button icon={<Plus size={18} />} onClick={() => setOpen(true)}>
           Nueva tarea
@@ -109,37 +188,85 @@ export function TasksPage() {
         <ListSkeleton />
       ) : tasks.length ? (
         <div className="grid gap-3">
-          {tasks.map((task) => (
-            <article key={task.id} className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/75 p-4 shadow-sm transition hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className={cn('font-semibold text-stone-950 dark:text-white', task.status === 'done' && 'text-stone-400 line-through')}>{task.title}</h2>
-                  <span className="rounded-full bg-lavender-100 px-2.5 py-1 text-xs font-semibold text-lavender-700 dark:bg-lavender-900/40 dark:text-lavender-100">{task.priority ?? 'medium'}</span>
+          {tasks.map((task) => {
+            const statusMeta = taskStatusMeta[task.status]
+            return (
+              <article key={task.id} className={cn('flex flex-col gap-4 rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 sm:flex-row sm:items-center sm:justify-between', statusMeta.cardClassName)}>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className={cn('font-semibold text-stone-950 dark:text-white', task.status === 'done' && 'text-stone-400 line-through')}>{task.title}</h2>
+                    <span className="rounded-full bg-lavender-100 px-2.5 py-1 text-xs font-semibold text-lavender-700 dark:bg-lavender-900/40 dark:text-lavender-100">{task.priority ?? 'medium'}</span>
+                    <TaskStatusBadge task={task} />
+                  </div>
+                  <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">{task.description || 'Sin descripcion'}</p>
+                  {task.status_note ? <p className="mt-2 rounded-2xl bg-white/70 p-3 text-sm text-stone-600 dark:bg-white/5 dark:text-stone-300">{task.status_note}</p> : null}
+                  <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+                    {assigneeLabel(task, profile, partner)} - {formatDate(task.due_date)}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {taskStatusActions.map((status) => {
+                      const meta = taskStatusMeta[status]
+                      const Icon = meta.icon
+                      const active = task.status === status
+                      return (
+                        <button
+                          key={status}
+                          type="button"
+                          disabled={busy}
+                          className={cn(
+                            'inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition disabled:opacity-50',
+                            active ? meta.className : 'bg-white/80 text-stone-600 hover:bg-blush-50 hover:text-blush-700 dark:bg-white/5 dark:text-stone-300 dark:hover:bg-white/10',
+                          )}
+                          onClick={() => handleStatusClick(task, status)}
+                        >
+                          <Icon size={14} />
+                          {meta.label}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
-                <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">{task.description || 'Sin descripción'}</p>
-                <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-                  {assigneeLabel(task, profile, partner)} · {formatDate(task.due_date)}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="secondary" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => void markDone(task)} aria-label="Cambiar estado">
-                  <Check size={17} />
-                </Button>
                 <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => void removeTask(task)} aria-label="Eliminar tarea">
                   <Trash2 size={17} />
                 </Button>
-              </div>
-            </article>
-          ))}
+              </article>
+            )
+          })}
         </div>
       ) : (
-        <EmptyState title="Sin tareas" description="Crea la primera tarea compartida y asígnala a quien corresponda." actionLabel="Nueva tarea" onAction={() => setOpen(true)} />
+        <EmptyState title="Sin tareas" description="Crea la primera tarea compartida y asignala a quien corresponda." actionLabel="Nueva tarea" onAction={() => setOpen(true)} />
       )}
+
+      <Modal
+        open={Boolean(statusTarget)}
+        title={statusTarget?.status === 'postponed' ? 'Motivo de posponer' : 'Motivo de no realizar'}
+        onClose={() => {
+          setStatusTarget(null)
+          setStatusNote('')
+        }}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-stone-600 dark:text-stone-300">
+            {statusTarget?.status === 'postponed'
+              ? 'Escribe por que esta tarea se pospuso para que ambos tengan contexto.'
+              : 'Escribe por que esta tarea no se realizo.'}
+          </p>
+          <Textarea
+            label="Detalle"
+            value={statusNote}
+            onChange={(event) => setStatusNote(event.target.value)}
+            placeholder={statusTarget?.status === 'postponed' ? 'Ej. La movimos para manana...' : 'Ej. No se pudo porque...'}
+          />
+          <Button className="w-full" disabled={busy} onClick={() => void submitStatusNote()}>
+            Guardar estado
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={open} title="Nueva tarea" onClose={() => setOpen(false)}>
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
-          <Input label="Título" error={errors.title?.message} {...register('title')} />
-          <Textarea label="Descripción" error={errors.description?.message} {...register('description')} />
+          <Input label="Titulo" error={errors.title?.message} {...register('title')} />
+          <Textarea label="Descripcion" error={errors.description?.message} {...register('description')} />
           <div className="grid gap-4 sm:grid-cols-2">
             <Select label="Prioridad" error={errors.priority?.message} {...register('priority')}>
               <option value="low">Baja</option>
@@ -149,16 +276,18 @@ export function TasksPage() {
             <Select label="Estado" error={errors.status?.message} {...register('status')}>
               <option value="pending">Pendiente</option>
               <option value="in_progress">En progreso</option>
-              <option value="done">Lista</option>
+              <option value="done">Hecha</option>
+              <option value="not_done">No realizada</option>
+              <option value="postponed">Pospuesta</option>
             </Select>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input label="Fecha límite" type="date" error={errors.due_date?.message} {...register('due_date')} />
+            <Input label="Fecha limite" type="date" error={errors.due_date?.message} {...register('due_date')} />
             <Select label="Asignada a" error={errors.assigned_to?.message} {...register('assigned_to')}>
               <option value="">Sin asignar</option>
               {members.map((member) => (
                 <option key={member.id} value={member.id}>
-                  {member.full_name ?? (member.id === profile?.id ? 'Tú' : 'Tu pareja')}
+                  {member.full_name ?? (member.id === profile?.id ? 'Tu' : 'Tu pareja')}
                 </option>
               ))}
             </Select>

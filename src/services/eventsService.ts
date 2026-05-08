@@ -1,7 +1,7 @@
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import type { EventInput } from '../lib/validations/events'
 import { supabase } from '../lib/supabase'
-import type { EventItem } from '../types/app'
+import type { EventItem, EventStatus } from '../types/app'
 
 export async function listEvents(coupleId: string) {
   const { data, error } = await supabase
@@ -25,12 +25,30 @@ export async function createEvent(coupleId: string, userId: string, input: Event
       location: input.location || null,
       color: input.color || '#ef9fb5',
       is_shared: input.is_shared,
+      actor_type: input.actor_type ?? 'user',
+      status: 'pending',
+      status_note: null,
       created_by: userId,
     })
     .select()
     .single()
   if (error) throw error
   return data
+}
+
+export async function updateEventStatus(id: string, status: EventStatus, statusNote?: string | null) {
+  const { data, error } = await supabase
+    .from('events')
+    .update({
+      status,
+      status_note: status === 'not_done' || status === 'postponed' ? statusNote : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data as EventItem
 }
 
 export async function updateEvent(id: string, input: Partial<EventInput>) {
