@@ -57,12 +57,22 @@ export async function unlinkCouple(coupleId: string) {
 }
 
 export async function updateCoupleAvatar(coupleId: string, avatarUrl: string) {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('couples')
     .update({ avatar_url: avatarUrl })
     .eq('id', coupleId)
-    .select()
-    .single()
   if (error) throw error
+
+  const { data, error: fetchError } = await supabase
+    .from('couples')
+    .select('*')
+    .eq('id', coupleId)
+    .maybeSingle()
+  if (fetchError) throw fetchError
+  if (!data) throw new Error('No pudimos confirmar la foto de pareja. Revisa las politicas de Supabase.')
+  if (data.avatar_url !== avatarUrl) {
+    throw new Error('Supabase no permitio guardar la foto de pareja. Revisa la politica UPDATE de couples.')
+  }
+
   return data as Couple
 }
