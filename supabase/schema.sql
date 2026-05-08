@@ -156,6 +156,109 @@ begin
 end;
 $$;
 
+create or replace function public.create_couple_for_current_user(new_invite_code text)
+returns public.couples
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_profile public.user_profiles;
+  created_couple public.couples;
+begin
+  select *
+  into current_profile
+  from public.user_profiles
+  where id = auth.uid();
+
+  if current_profile.id is null then
+    raise exception 'Perfil de usuario no encontrado';
+  end if;
+
+  if current_profile.couple_id is not null then
+    raise exception 'Ya tienes una pareja vinculada';
+  end if;
+
+  insert into public.couples (invite_code, created_by)
+  values (upper(new_invite_code), auth.uid())
+  returning * into created_couple;
+
+  update public.user_profiles
+  set couple_id = created_couple.id,
+      updated_at = now()
+  where id = auth.uid();
+
+  return created_couple;
+end;
+$$;
+
+create or replace function public.join_couple_by_code(raw_invite_code text)
+returns public.user_profiles
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_profile public.user_profiles;
+  target_couple public.couples;
+  member_count integer;
+  partner_profile public.user_profiles;
+begin
+  select *
+  into current_profile
+  from public.user_profiles
+  where id = auth.uid();
+
+  if current_profile.id is null then
+    raise exception 'Perfil de usuario no encontrado';
+  end if;
+
+  if current_profile.couple_id is not null then
+    raise exception 'Ya tienes una pareja vinculada';
+  end if;
+
+  select *
+  into target_couple
+  from public.couples
+  where invite_code = upper(trim(raw_invite_code))
+  limit 1;
+
+  if target_couple.id is null or target_couple.created_at < now() - interval '48 hours' then
+    raise exception 'Código de invitación inválido o expirado.';
+  end if;
+
+  select count(*)
+  into member_count
+  from public.user_profiles
+  where couple_id = target_couple.id;
+
+  if member_count >= 2 then
+    raise exception 'Este código ya fue usado';
+  end if;
+
+  update public.user_profiles
+  set couple_id = target_couple.id,
+      updated_at = now()
+  where id in (auth.uid(), target_couple.created_by);
+
+  select *
+  into partner_profile
+  from public.user_profiles
+  where id = target_couple.created_by;
+
+  return partner_profile;
+end;
+$$;
+
+revoke all on function public.create_couple_for_current_user(text) from public;
+grant execute on function public.create_couple_for_current_user(text) to authenticated;
+
+revoke all on function public.join_couple_by_code(text) from public;
+grant execute on function public.join_couple_by_code(text) to authenticated;
+
+revoke all on function public.unlink_couple(uuid) from public;
+grant execute on function public.unlink_couple(uuid) to authenticated;
+
 create or replace function public.handle_new_user_profile()
 returns trigger
 language plpgsql

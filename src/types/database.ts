@@ -80,6 +80,18 @@ export interface Database {
         }
         Returns: void
       }
+      create_couple_for_current_user: {
+        Args: {
+          new_invite_code: string
+        }
+        Returns: Couple
+      }
+      join_couple_by_code: {
+        Args: {
+          raw_invite_code: string
+        }
+        Returns: UserProfile
+      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>

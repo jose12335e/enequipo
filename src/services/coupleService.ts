@@ -1,4 +1,3 @@
-import { addHours, isAfter, parseISO } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import type { Couple, CoupleContext, UserProfile } from '../types/app'
 import { generateInviteCode } from '../utils/invite'
@@ -6,7 +5,7 @@ import { generateInviteCode } from '../utils/invite'
 async function membersForCouple(coupleId: string) {
   const { data, error } = await supabase.from('user_profiles').select('*').eq('couple_id', coupleId)
   if (error) throw error
-  return data
+  return data as UserProfile[]
 }
 
 export async function getCoupleContext(userId: string): Promise<CoupleContext> {
@@ -29,24 +28,14 @@ export async function getCoupleContext(userId: string): Promise<CoupleContext> {
 }
 
 export async function createCouple(userId: string): Promise<Couple> {
+  void userId
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const inviteCode = generateInviteCode()
-    const coupleId = crypto.randomUUID()
-    const { data, error } = await supabase
-      .from('couples')
-      .insert({ id: coupleId, invite_code: inviteCode, created_by: userId })
-      .select()
-      .single()
+    const { data, error } = await supabase.rpc('create_couple_for_current_user', {
+      new_invite_code: inviteCode,
+    })
 
-    if (!error && data) {
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .update({ couple_id: data.id, updated_at: new Date().toISOString() })
-        .eq('id', userId)
-      if (profileError) throw profileError
-      return data
-    }
-
+    if (!error && data) return data as Couple
     if (error?.code !== '23505') throw error
   }
 
@@ -54,24 +43,12 @@ export async function createCouple(userId: string): Promise<Couple> {
 }
 
 export async function joinCouple(userId: string, inviteCode: string): Promise<UserProfile | null> {
-  const code = inviteCode.trim().toUpperCase()
-  const { data: couple, error } = await supabase.from('couples').select('*').eq('invite_code', code).maybeSingle()
+  void userId
+  const { data, error } = await supabase.rpc('join_couple_by_code', {
+    raw_invite_code: inviteCode,
+  })
   if (error) throw error
-  if (!couple) throw new Error('Código de invitación inválido o expirado.')
-
-  const expiresAt = addHours(parseISO(couple.created_at), 48)
-  if (isAfter(new Date(), expiresAt)) throw new Error('Código de invitación inválido o expirado.')
-
-  const members = await membersForCouple(couple.id)
-  if (members.length >= 2) throw new Error('Este código ya fue usado')
-
-  const { error: profileError } = await supabase
-    .from('user_profiles')
-    .update({ couple_id: couple.id, updated_at: new Date().toISOString() })
-    .eq('id', userId)
-  if (profileError) throw profileError
-
-  return members.find((member) => member.id !== userId) ?? null
+  return data as UserProfile | null
 }
 
 export async function unlinkCouple(coupleId: string) {
