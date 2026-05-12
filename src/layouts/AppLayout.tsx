@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
+import { UpdateAnnouncement } from '../components/UpdateAnnouncement'
 import { useAuthStore } from '../store/authStore'
 import { cn } from '../utils/cn'
 
@@ -118,6 +119,8 @@ export function AppLayout() {
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 gap-1 border-t border-white/70 bg-white/85 p-2 backdrop-blur-xl dark:border-white/10 dark:bg-stone-950/90 md:hidden">
         {navItems.map((item) => <NavItem key={item.to} {...item} />)}
       </nav>
+
+      <UpdateAnnouncement />
     </div>
   )
 }
