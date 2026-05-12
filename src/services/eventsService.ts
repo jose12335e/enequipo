@@ -51,11 +51,16 @@ export async function updateEventStatus(id: string, status: EventStatus, statusN
   return data as EventItem
 }
 
-export async function updateEvent(id: string, input: Partial<EventInput>) {
+export async function updateEvent(id: string, input: EventInput) {
   const values = {
-    ...input,
-    start_at: input.start_at ? new Date(input.start_at).toISOString() : undefined,
-    end_at: input.end_at ? new Date(input.end_at).toISOString() : undefined,
+    title: input.title,
+    description: input.description || null,
+    start_at: new Date(input.start_at).toISOString(),
+    end_at: input.end_at ? new Date(input.end_at).toISOString() : null,
+    location: input.location || null,
+    color: input.color || '#ef9fb5',
+    is_shared: input.is_shared,
+    actor_type: input.actor_type ?? 'user',
     updated_at: new Date().toISOString(),
   }
   const { data, error } = await supabase.from('events').update(values).eq('id', id).select().single()

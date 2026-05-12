@@ -13,9 +13,9 @@ import {
   subMonths,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, MapPin, Plus, RotateCcw, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Clock3, MapPin, Pencil, Plus, RotateCcw, Trash2, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { Button } from '../components/Button'
@@ -24,7 +24,7 @@ import { Input, Select, Textarea } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { eventSchema, type EventInput } from '../lib/validations/events'
-import { createEvent, deleteEvent, listEvents, subscribeToEvents, updateEventStatus } from '../services/eventsService'
+import { createEvent, deleteEvent, listEvents, subscribeToEvents, updateEvent, updateEventStatus } from '../services/eventsService'
 import { useToastStore } from '../store/toastStore'
 import type { EventItem, EventStatus } from '../types/app'
 import { formatDateTime } from '../utils/format'
@@ -65,6 +65,7 @@ export function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<EventItem | null>(null)
   const [calendarView, setCalendarView] = useState<CalendarView>('month')
   const [visibleMonth, setVisibleMonth] = useState(() => new Date())
   const [selectedDay, setSelectedDay] = useState(() => new Date())
@@ -76,18 +77,31 @@ export function CalendarPage() {
     formState: { errors },
     reset,
     setValue,
+    control,
   } = useForm<EventInput>({
     resolver: zodResolver(eventSchema),
     mode: 'onChange',
     defaultValues: { is_shared: true, color: '#ef9fb5', actor_type: 'user' },
   })
+  const startAtField = useWatch({ control, name: 'start_at' })
+  const endAtField = useWatch({ control, name: 'end_at' })
 
   function selectedDayValue() {
     return format(selectedDay, 'yyyy-MM-dd')
   }
 
+  function toDateTimeInput(value: string) {
+    return format(new Date(value), "yyyy-MM-dd'T'HH:mm")
+  }
+
+  function timeFromDateTime(value?: string) {
+    if (!value) return ''
+    return format(new Date(value), 'HH:mm')
+  }
+
   function openEventModal() {
     const day = selectedDayValue()
+    setEditingEvent(null)
     reset({
       title: '',
       description: '',
@@ -99,6 +113,29 @@ export function CalendarPage() {
       actor_type: 'user',
     })
     setOpen(true)
+  }
+
+  function openEditEventModal(event: EventItem) {
+    const eventDay = new Date(event.start_at)
+    setSelectedDay(eventDay)
+    setVisibleMonth(eventDay)
+    setEditingEvent(event)
+    reset({
+      title: event.title,
+      description: event.description ?? '',
+      start_at: toDateTimeInput(event.start_at),
+      end_at: event.end_at ? toDateTimeInput(event.end_at) : '',
+      location: event.location ?? '',
+      color: event.color ?? '#ef9fb5',
+      is_shared: event.is_shared,
+      actor_type: event.actor_type ?? 'user',
+    })
+    setOpen(true)
+  }
+
+  function closeEventModal() {
+    setOpen(false)
+    setEditingEvent(null)
   }
 
   useEffect(() => {
@@ -115,12 +152,28 @@ export function CalendarPage() {
     if (!couple || !profile) return
     setBusy(true)
     try {
-      await createEvent(couple.id, profile.id, input)
-      reset({ is_shared: true, color: '#ef9fb5', actor_type: 'user' })
-      setOpen(false)
-      pushToast({ type: 'success', title: 'Evento creado' })
+      if (editingEvent) {
+        const updated = await updateEvent(editingEvent.id, input)
+        setEvents((current) => current.map((event) => (event.id === updated.id ? (updated as EventItem) : event)))
+        pushToast({ type: 'success', title: 'Evento actualizado' })
+      } else {
+        const created = await createEvent(couple.id, profile.id, input)
+        setEvents((current) => [...current, created as EventItem])
+        pushToast({ type: 'success', title: 'Evento creado' })
+      }
+      reset({
+        title: '',
+        description: '',
+        start_at: `${selectedDayValue()}T09:00`,
+        end_at: `${selectedDayValue()}T10:00`,
+        location: '',
+        color: '#ef9fb5',
+        is_shared: true,
+        actor_type: 'user',
+      })
+      closeEventModal()
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos crear el evento', description: (error as Error).message })
+      pushToast({ type: 'error', title: editingEvent ? 'No pudimos actualizar el evento' : 'No pudimos crear el evento', description: (error as Error).message })
     } finally {
       setBusy(false)
     }
@@ -262,9 +315,14 @@ export function CalendarPage() {
             <StatusActions event={event} />
           </div>
         </div>
-        <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => void removeEvent(event)} aria-label="Eliminar evento">
-          <Trash2 size={17} />
-        </Button>
+        <div className="flex gap-2 md:justify-end">
+          <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => openEditEventModal(event)} aria-label="Editar evento">
+            <Pencil size={17} />
+          </Button>
+          <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => void removeEvent(event)} aria-label="Eliminar evento">
+            <Trash2 size={17} />
+          </Button>
+        </div>
       </article>
     )
   }
@@ -666,7 +724,7 @@ export function CalendarPage() {
         </div>
       </Modal>
 
-      <Modal open={open} title="Nuevo evento" onClose={() => setOpen(false)}>
+      <Modal open={open} title={editingEvent ? 'Editar evento' : 'Nuevo evento'} onClose={closeEventModal}>
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
           <Input label="Título" error={errors.title?.message} {...register('title')} />
           <Textarea label="Descripción" error={errors.description?.message} {...register('description')} />
@@ -678,14 +736,14 @@ export function CalendarPage() {
               label="Hora inicio"
               type="time"
               error={errors.start_at?.message}
-              defaultValue="09:00"
+              value={timeFromDateTime(startAtField)}
               onChange={(event) => setValue('start_at', `${selectedDayValue()}T${event.target.value}`, { shouldValidate: true })}
             />
             <Input
               label="Hora fin"
               type="time"
               error={errors.end_at?.message}
-              defaultValue="10:00"
+              value={timeFromDateTime(endAtField)}
               onChange={(event) => setValue('end_at', `${selectedDayValue()}T${event.target.value}`, { shouldValidate: true })}
             />
           </div>
@@ -702,7 +760,7 @@ export function CalendarPage() {
             Compartido
           </label>
           <Button className="w-full" disabled={busy}>
-            Crear evento
+            {editingEvent ? 'Guardar cambios' : 'Crear evento'}
           </Button>
         </form>
       </Modal>
