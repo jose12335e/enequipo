@@ -1,17 +1,60 @@
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import type { ExpenseInput, SettlementInput } from '../lib/validations/expenses'
 import { supabase } from '../lib/supabase'
-import type { Expense, SplitDetails } from '../types/app'
+import type { Expense, SplitDetails, SplitType } from '../types/app'
 
-function splitDetailsFor(input: ExpenseInput, userId: string, partnerId: string): SplitDetails | null {
-  return input.split_type === 'custom' && input.partner_percentage != null
-    ? {
-        percentages: {
-          [partnerId]: input.partner_percentage,
-          [userId]: 100 - input.partner_percentage,
-        },
-      }
-    : null
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function splitSharesFor(input: ExpenseInput, userId: string, partnerId: string) {
+  const presetPercentages: Partial<Record<ExpenseInput['split_mode'], [number, number]>> = {
+    '50_50': [50, 50],
+    '60_40': [60, 40],
+    '70_30': [70, 30],
+    '80_20': [80, 20],
+    '100_0': [100, 0],
+  }
+  const preset = presetPercentages[input.split_mode]
+
+  if (preset) {
+    return {
+      percentages: {
+        [userId]: preset[0],
+        [partnerId]: preset[1],
+      },
+    }
+  }
+
+  if (input.split_mode === 'custom_amount') {
+    return {
+      amounts: {
+        [userId]: roundMoney(input.user_amount ?? 0),
+        [partnerId]: roundMoney(input.partner_amount ?? 0),
+      },
+    }
+  }
+
+  return {
+    percentages: {
+      [userId]: roundMoney(input.custom_user_percentage ?? 50),
+      [partnerId]: roundMoney(input.custom_partner_percentage ?? 50),
+    },
+  }
+}
+
+function splitPayloadFor(input: ExpenseInput, userId: string, partnerId: string): { split_type: SplitType; split_details: SplitDetails | null } {
+  const shares = splitSharesFor(input, userId, partnerId)
+
+  if (shares.percentages?.[userId] === 50 && shares.percentages?.[partnerId] === 50) {
+    return { split_type: '50_50', split_details: null }
+  }
+
+  if (shares.percentages?.[input.paid_by] === 0) {
+    return { split_type: 'one_paid', split_details: null }
+  }
+
+  return { split_type: 'custom', split_details: shares }
 }
 
 export async function listExpenses(coupleId: string) {
@@ -40,7 +83,7 @@ export async function createExpense(
   partnerId: string,
   input: ExpenseInput,
 ) {
-  const splitDetails = splitDetailsFor(input, userId, partnerId)
+  const splitPayload = splitPayloadFor(input, userId, partnerId)
 
   const { data, error } = await supabase
     .from('expenses')
@@ -51,8 +94,8 @@ export async function createExpense(
       description: input.description || null,
       date: input.date,
       paid_by: input.paid_by,
-      split_type: input.split_type,
-      split_details: splitDetails,
+      split_type: splitPayload.split_type,
+      split_details: splitPayload.split_details,
       created_by: userId,
     })
     .select()
@@ -62,6 +105,8 @@ export async function createExpense(
 }
 
 export async function updateExpense(id: string, userId: string, partnerId: string, input: ExpenseInput) {
+  const splitPayload = splitPayloadFor(input, userId, partnerId)
+
   const { data, error } = await supabase
     .from('expenses')
     .update({
@@ -70,8 +115,8 @@ export async function updateExpense(id: string, userId: string, partnerId: strin
       description: input.description || null,
       date: input.date,
       paid_by: input.paid_by,
-      split_type: input.split_type,
-      split_details: splitDetailsFor(input, userId, partnerId),
+      split_type: splitPayload.split_type,
+      split_details: splitPayload.split_details,
     })
     .eq('id', id)
     .select()

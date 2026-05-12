@@ -65,6 +65,24 @@ describe('financial utils', () => {
     expect(balance.debtorId).toBe('b')
   })
 
+  it('supports custom fixed amounts', () => {
+    const expenses = [
+      {
+        ...baseExpense,
+        amount: 300,
+        paid_by: 'a',
+        split_type: 'custom',
+        split_details: { amounts: { a: 90, b: 210 } },
+      },
+    ] as Expense[]
+
+    const balance = calculateNetBalance(expenses, 'a', 'b')
+
+    expect(balance.amount).toBe(210)
+    expect(balance.debtorId).toBe('b')
+    expect(balance.creditorId).toBe('a')
+  })
+
   it('returns monthly totals and top spender', () => {
     const expenses = [
       { ...baseExpense, id: '1', amount: 20, category: 'Casa', paid_by: 'a', split_type: '50_50' },
