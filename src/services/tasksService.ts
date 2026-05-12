@@ -48,10 +48,18 @@ export async function updateTaskStatus(id: string, status: TaskStatus, statusNot
   return data as TaskItem
 }
 
-export async function updateTask(id: string, input: Partial<TaskInput>) {
+export async function updateTask(id: string, input: TaskInput) {
   const { data, error } = await supabase
     .from('tasks')
-    .update({ ...input, updated_at: new Date().toISOString() })
+    .update({
+      title: input.title,
+      description: input.description || null,
+      priority: input.priority,
+      status: input.status,
+      due_date: input.due_date || null,
+      assigned_to: input.assigned_to || null,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
     .select()
     .single()

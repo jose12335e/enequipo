@@ -28,10 +28,16 @@ export async function createNote(coupleId: string, userId: string, input: NoteIn
   return data
 }
 
-export async function updateNote(id: string, input: Partial<NoteInput>) {
+export async function updateNote(id: string, input: NoteInput) {
   const { data, error } = await supabase
     .from('notes')
-    .update({ ...input, updated_at: new Date().toISOString() })
+    .update({
+      title: input.title,
+      content: input.content,
+      category: input.category || null,
+      is_shared: input.is_shared,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
     .select()
     .single()

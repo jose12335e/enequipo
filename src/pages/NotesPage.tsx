@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
@@ -9,7 +9,7 @@ import { Input, Textarea } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { noteSchema, type NoteInput } from '../lib/validations/notes'
-import { createNote, deleteNote, listNotes } from '../services/notesService'
+import { createNote, deleteNote, listNotes, updateNote } from '../services/notesService'
 import { useToastStore } from '../store/toastStore'
 import type { Note } from '../types/app'
 import { formatDate } from '../utils/format'
@@ -23,6 +23,7 @@ export function NotesPage() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editingNote, setEditingNote] = useState<Note | null>(null)
   const {
     register,
     handleSubmit,
@@ -42,17 +43,43 @@ export function NotesPage() {
     setNotes(await listNotes(couple.id))
   }
 
+  function openNoteModal() {
+    setEditingNote(null)
+    reset({ title: '', content: '', category: '', is_shared: false })
+    setOpen(true)
+  }
+
+  function openEditNoteModal(note: Note) {
+    setEditingNote(note)
+    reset({
+      title: note.title,
+      content: note.content,
+      category: note.category ?? '',
+      is_shared: note.is_shared,
+    })
+    setOpen(true)
+  }
+
+  function closeNoteModal() {
+    setOpen(false)
+    setEditingNote(null)
+  }
+
   async function onSubmit(input: NoteInput) {
     if (!couple || !profile) return
     setBusy(true)
     try {
-      await createNote(couple.id, profile.id, input)
+      if (editingNote) {
+        await updateNote(editingNote.id, input)
+      } else {
+        await createNote(couple.id, profile.id, input)
+      }
       await refresh()
       reset({ title: '', content: '', category: '', is_shared: false })
-      setOpen(false)
-      pushToast({ type: 'success', title: 'Nota creada' })
+      closeNoteModal()
+      pushToast({ type: 'success', title: editingNote ? 'Nota actualizada' : 'Nota creada' })
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos crear la nota', description: (error as Error).message })
+      pushToast({ type: 'error', title: editingNote ? 'No pudimos actualizar la nota' : 'No pudimos crear la nota', description: (error as Error).message })
     } finally {
       setBusy(false)
     }
@@ -82,7 +109,7 @@ export function NotesPage() {
           <h1 className="text-3xl font-bold text-stone-950 dark:text-white">Notas</h1>
           <p className="mt-1 text-stone-600 dark:text-stone-300">Ideas, listas y acuerdos sin ruido realtime.</p>
         </div>
-        <Button icon={<Plus size={18} />} onClick={() => setOpen(true)}>
+        <Button icon={<Plus size={18} />} onClick={openNoteModal}>
           Nueva nota
         </Button>
       </div>
@@ -100,19 +127,24 @@ export function NotesPage() {
                     {note.category || 'General'} · {note.is_shared ? 'Compartida' : 'Privada'} · {formatDate(note.updated_at)}
                   </p>
                 </div>
-                <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => void removeNote(note)} aria-label="Eliminar nota">
-                  <Trash2 size={16} />
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => openEditNoteModal(note)} aria-label="Editar nota">
+                    <Pencil size={16} />
+                  </Button>
+                  <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => void removeNote(note)} aria-label="Eliminar nota">
+                    <Trash2 size={16} />
+                  </Button>
+                </div>
               </div>
               <p className="mt-4 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-stone-600 dark:text-stone-300">{note.content}</p>
             </article>
           ))}
         </div>
       ) : (
-        <EmptyState title="Sin notas" description="Guarda una nota para la pareja o mantenla privada dentro del espacio compartido." actionLabel="Nueva nota" onAction={() => setOpen(true)} />
+        <EmptyState title="Sin notas" description="Guarda una nota para la pareja o mantenla privada dentro del espacio compartido." actionLabel="Nueva nota" onAction={openNoteModal} />
       )}
 
-      <Modal open={open} title="Nueva nota" onClose={() => setOpen(false)}>
+      <Modal open={open} title={editingNote ? 'Editar nota' : 'Nueva nota'} onClose={closeNoteModal}>
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
           <Input label="Título" error={errors.title?.message} {...register('title')} />
           <Textarea label="Contenido" error={errors.content?.message} {...register('content')} />
@@ -122,7 +154,7 @@ export function NotesPage() {
             Compartida con mi pareja
           </label>
           <Button className="w-full" disabled={busy}>
-            Crear nota
+            {editingNote ? 'Guardar cambios' : 'Crear nota'}
           </Button>
         </form>
       </Modal>

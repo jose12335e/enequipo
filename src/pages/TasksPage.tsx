@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CheckCircle2, Clock3, ListTodo, Plus, RotateCcw, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock3, ListTodo, Pencil, Plus, RotateCcw, Trash2, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
@@ -10,7 +10,7 @@ import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
 import { taskSchema, type TaskInput } from '../lib/validations/tasks'
-import { createTask, deleteTask, listTasks, subscribeToTasks, updateTaskStatus } from '../services/tasksService'
+import { createTask, deleteTask, listTasks, subscribeToTasks, updateTask, updateTaskStatus } from '../services/tasksService'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
 import type { TaskItem, TaskStatus, UserProfile } from '../types/app'
@@ -68,6 +68,7 @@ export function TasksPage() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null)
   const [statusTarget, setStatusTarget] = useState<{ task: TaskItem; status: TaskStatus } | null>(null)
   const [statusNote, setStatusNote] = useState('')
   const {
@@ -83,6 +84,30 @@ export function TasksPage() {
 
   const members = useMemo(() => [profile, partner].filter(Boolean) as UserProfile[], [partner, profile])
 
+  function openTaskModal() {
+    setEditingTask(null)
+    reset({ title: '', description: '', priority: 'medium', status: 'pending', due_date: '', assigned_to: '' })
+    setOpen(true)
+  }
+
+  function openEditTaskModal(task: TaskItem) {
+    setEditingTask(task)
+    reset({
+      title: task.title,
+      description: task.description ?? '',
+      priority: task.priority ?? 'medium',
+      status: task.status,
+      due_date: task.due_date ?? '',
+      assigned_to: task.assigned_to ?? '',
+    })
+    setOpen(true)
+  }
+
+  function closeTaskModal() {
+    setOpen(false)
+    setEditingTask(null)
+  }
+
   useEffect(() => {
     if (!couple) return
     listTasks(couple.id)
@@ -97,13 +122,19 @@ export function TasksPage() {
     if (!couple || !profile) return
     setBusy(true)
     try {
-      await createTask(couple.id, profile.id, input)
-      reset({ priority: 'medium', status: 'pending' })
-      setOpen(false)
+      if (editingTask) {
+        const updated = await updateTask(editingTask.id, input)
+        setTasks((current) => current.map((task) => (task.id === updated.id ? updated : task)))
+        pushToast({ type: 'success', title: 'Tarea actualizada' })
+      } else {
+        await createTask(couple.id, profile.id, input)
+        pushToast({ type: 'success', title: 'Tarea creada' })
+      }
+      reset({ title: '', description: '', priority: 'medium', status: 'pending', due_date: '', assigned_to: '' })
+      closeTaskModal()
       await refreshContext()
-      pushToast({ type: 'success', title: 'Tarea creada' })
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos crear la tarea', description: (error as Error).message })
+      pushToast({ type: 'error', title: editingTask ? 'No pudimos actualizar la tarea' : 'No pudimos crear la tarea', description: (error as Error).message })
     } finally {
       setBusy(false)
     }
@@ -179,7 +210,7 @@ export function TasksPage() {
           <h1 className="text-3xl font-bold text-stone-950 dark:text-white">Tareas</h1>
           <p className="mt-1 text-stone-600 dark:text-stone-300">Responsables, estados y prioridades compartidas.</p>
         </div>
-        <Button icon={<Plus size={18} />} onClick={() => setOpen(true)}>
+        <Button icon={<Plus size={18} />} onClick={openTaskModal}>
           Nueva tarea
         </Button>
       </div>
@@ -226,15 +257,20 @@ export function TasksPage() {
                     })}
                   </div>
                 </div>
-                <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => void removeTask(task)} aria-label="Eliminar tarea">
-                  <Trash2 size={17} />
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => openEditTaskModal(task)} aria-label="Editar tarea">
+                    <Pencil size={17} />
+                  </Button>
+                  <Button variant="ghost" className="h-10 min-h-10 w-10 rounded-full px-0" onClick={() => void removeTask(task)} aria-label="Eliminar tarea">
+                    <Trash2 size={17} />
+                  </Button>
+                </div>
               </article>
             )
           })}
         </div>
       ) : (
-        <EmptyState title="Sin tareas" description="Crea la primera tarea compartida y asignala a quien corresponda." actionLabel="Nueva tarea" onAction={() => setOpen(true)} />
+        <EmptyState title="Sin tareas" description="Crea la primera tarea compartida y asignala a quien corresponda." actionLabel="Nueva tarea" onAction={openTaskModal} />
       )}
 
       <Modal
@@ -263,7 +299,7 @@ export function TasksPage() {
         </div>
       </Modal>
 
-      <Modal open={open} title="Nueva tarea" onClose={() => setOpen(false)}>
+      <Modal open={open} title={editingTask ? 'Editar tarea' : 'Nueva tarea'} onClose={closeTaskModal}>
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
           <Input label="Titulo" error={errors.title?.message} {...register('title')} />
           <Textarea label="Descripcion" error={errors.description?.message} {...register('description')} />
@@ -293,7 +329,7 @@ export function TasksPage() {
             </Select>
           </div>
           <Button className="w-full" disabled={busy}>
-            Crear tarea
+            {editingTask ? 'Guardar cambios' : 'Crear tarea'}
           </Button>
         </form>
       </Modal>

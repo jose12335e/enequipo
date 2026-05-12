@@ -3,6 +3,17 @@ import type { ExpenseInput, SettlementInput } from '../lib/validations/expenses'
 import { supabase } from '../lib/supabase'
 import type { Expense, SplitDetails } from '../types/app'
 
+function splitDetailsFor(input: ExpenseInput, userId: string, partnerId: string): SplitDetails | null {
+  return input.split_type === 'custom' && input.partner_percentage != null
+    ? {
+        percentages: {
+          [partnerId]: input.partner_percentage,
+          [userId]: 100 - input.partner_percentage,
+        },
+      }
+    : null
+}
+
 export async function listExpenses(coupleId: string) {
   const { data, error } = await supabase
     .from('expenses')
@@ -29,15 +40,7 @@ export async function createExpense(
   partnerId: string,
   input: ExpenseInput,
 ) {
-  const splitDetails: SplitDetails | null =
-    input.split_type === 'custom' && input.partner_percentage != null
-      ? {
-          percentages: {
-            [partnerId]: input.partner_percentage,
-            [userId]: 100 - input.partner_percentage,
-          },
-        }
-      : null
+  const splitDetails = splitDetailsFor(input, userId, partnerId)
 
   const { data, error } = await supabase
     .from('expenses')
@@ -58,10 +61,37 @@ export async function createExpense(
   return data
 }
 
-export async function updateExpense(id: string, input: Partial<ExpenseInput>) {
-  const values = { ...input }
-  delete values.partner_percentage
-  const { data, error } = await supabase.from('expenses').update(values).eq('id', id).select().single()
+export async function updateExpense(id: string, userId: string, partnerId: string, input: ExpenseInput) {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({
+      amount: input.amount,
+      category: input.category,
+      description: input.description || null,
+      date: input.date,
+      paid_by: input.paid_by,
+      split_type: input.split_type,
+      split_details: splitDetailsFor(input, userId, partnerId),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateSettlement(id: string, input: SettlementInput) {
+  const { data, error } = await supabase
+    .from('debt_settlements')
+    .update({
+      amount: input.amount,
+      from_user: input.from_user,
+      to_user: input.to_user,
+      note: input.note || null,
+    })
+    .eq('id', id)
+    .select()
+    .single()
   if (error) throw error
   return data
 }

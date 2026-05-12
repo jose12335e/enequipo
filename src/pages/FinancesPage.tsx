@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CircleDollarSign, HandCoins, Plus, ReceiptText, Trash2 } from 'lucide-react'
+import { CircleDollarSign, HandCoins, Pencil, Plus, ReceiptText, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
@@ -11,7 +11,7 @@ import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { StatCard } from '../components/StatCard'
 import { expenseSchema, settlementSchema, type ExpenseInput, type SettlementInput } from '../lib/validations/expenses'
-import { createExpense, createSettlement, deleteExpense, listExpenses, listSettlements, subscribeToExpenses } from '../services/expensesService'
+import { createExpense, createSettlement, deleteExpense, listExpenses, listSettlements, subscribeToExpenses, updateExpense, updateSettlement } from '../services/expensesService'
 import { useToastStore } from '../store/toastStore'
 import type { DebtSettlement, Expense, UserProfile } from '../types/app'
 import { calculateNetBalance, monthlyTotalsByCategory, topMonthlySpender } from '../utils/financial'
@@ -35,6 +35,8 @@ export function FinancesPage() {
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [settlementOpen, setSettlementOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [editingSettlement, setEditingSettlement] = useState<DebtSettlement | null>(null)
 
   const members = useMemo(() => [profile, partner].filter(Boolean) as UserProfile[], [partner, profile])
   const expenseForm = useForm<ExpenseInput>({
@@ -74,6 +76,59 @@ export function FinancesPage() {
   const chartData = useMemo(() => monthlyTotalsByCategory(expenses), [expenses])
   const topSpender = useMemo(() => topMonthlySpender(expenses), [expenses])
 
+  function partnerPercentageFor(expense: Expense) {
+    if (expense.split_type !== 'custom' || !partner?.id) return undefined
+    const value = expense.split_details?.percentages?.[partner.id]
+    return value == null ? undefined : Number(value)
+  }
+
+  function openExpenseModal() {
+    setEditingExpense(null)
+    expenseForm.reset({ split_type: '50_50', date: new Date().toISOString().slice(0, 10), paid_by: profile?.id ?? '', partner_percentage: undefined })
+    setExpenseOpen(true)
+  }
+
+  function openEditExpenseModal(expense: Expense) {
+    setEditingExpense(expense)
+    expenseForm.reset({
+      amount: Number(expense.amount),
+      category: expense.category,
+      description: expense.description ?? '',
+      date: expense.date,
+      paid_by: expense.paid_by,
+      split_type: expense.split_type,
+      partner_percentage: partnerPercentageFor(expense),
+    })
+    setExpenseOpen(true)
+  }
+
+  function closeExpenseModal() {
+    setExpenseOpen(false)
+    setEditingExpense(null)
+  }
+
+  function openSettlementModal() {
+    setEditingSettlement(null)
+    settlementForm.reset({ amount: undefined, from_user: '', to_user: '', note: '' })
+    setSettlementOpen(true)
+  }
+
+  function openEditSettlementModal(settlement: DebtSettlement) {
+    setEditingSettlement(settlement)
+    settlementForm.reset({
+      amount: Number(settlement.amount),
+      from_user: settlement.from_user,
+      to_user: settlement.to_user,
+      note: settlement.note ?? '',
+    })
+    setSettlementOpen(true)
+  }
+
+  function closeSettlementModal() {
+    setSettlementOpen(false)
+    setEditingSettlement(null)
+  }
+
   async function onExpenseSubmit(input: ExpenseInput) {
     if (!couple || !profile || !partner) {
       pushToast({ type: 'error', title: 'Gasto no permitido', description: 'Necesitas una pareja vinculada para crear gastos compartidos.' })
@@ -81,13 +136,17 @@ export function FinancesPage() {
     }
     setBusy(true)
     try {
-      await createExpense(couple.id, profile.id, partner.id, input)
+      if (editingExpense) {
+        await updateExpense(editingExpense.id, profile.id, partner.id, input)
+      } else {
+        await createExpense(couple.id, profile.id, partner.id, input)
+      }
       await refresh()
       expenseForm.reset({ split_type: '50_50', date: new Date().toISOString().slice(0, 10), paid_by: profile.id })
-      setExpenseOpen(false)
-      pushToast({ type: 'success', title: 'Gasto registrado' })
+      closeExpenseModal()
+      pushToast({ type: 'success', title: editingExpense ? 'Gasto actualizado' : 'Gasto registrado' })
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos registrar el gasto', description: (error as Error).message })
+      pushToast({ type: 'error', title: editingExpense ? 'No pudimos actualizar el gasto' : 'No pudimos registrar el gasto', description: (error as Error).message })
     } finally {
       setBusy(false)
     }
@@ -97,13 +156,21 @@ export function FinancesPage() {
     if (!couple) return
     setBusy(true)
     try {
-      await createSettlement(couple.id, input)
+      if (editingSettlement) {
+        await updateSettlement(editingSettlement.id, input)
+      } else {
+        await createSettlement(couple.id, input)
+      }
       await refresh()
       settlementForm.reset()
-      setSettlementOpen(false)
-      pushToast({ type: 'success', title: 'Liquidación registrada', description: 'Los gastos abiertos fueron marcados como liquidados.' })
+      closeSettlementModal()
+      pushToast({
+        type: 'success',
+        title: editingSettlement ? 'Liquidacion actualizada' : 'Liquidacion registrada',
+        description: editingSettlement ? undefined : 'Los gastos abiertos fueron marcados como liquidados.',
+      })
     } catch (error) {
-      pushToast({ type: 'error', title: 'No pudimos liquidar', description: (error as Error).message })
+      pushToast({ type: 'error', title: editingSettlement ? 'No pudimos actualizar la liquidacion' : 'No pudimos liquidar', description: (error as Error).message })
     } finally {
       setBusy(false)
     }
@@ -139,10 +206,10 @@ export function FinancesPage() {
           <p className="mt-1 text-stone-600 dark:text-stone-300">Gastos y liquidaciones son conceptos separados.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button variant="secondary" icon={<HandCoins size={18} />} onClick={() => setSettlementOpen(true)}>
+          <Button variant="secondary" icon={<HandCoins size={18} />} onClick={openSettlementModal}>
             Liquidar
           </Button>
-          <Button icon={<Plus size={18} />} onClick={() => setExpenseOpen(true)}>
+          <Button icon={<Plus size={18} />} onClick={openExpenseModal}>
             Gasto
           </Button>
         </div>
@@ -196,9 +263,14 @@ export function FinancesPage() {
                         {expense.split_type} · {expense.settled ? 'Liquidado' : 'Abierto'}
                       </p>
                     </div>
-                    <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => void removeExpense(expense)} aria-label="Eliminar gasto">
-                      <Trash2 size={16} />
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => openEditExpenseModal(expense)} aria-label="Editar gasto">
+                        <Pencil size={16} />
+                      </Button>
+                      <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => void removeExpense(expense)} aria-label="Eliminar gasto">
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
                   </div>
                 ))}
                 {!expenses.length ? <p className="text-sm text-stone-500 dark:text-stone-400">Sin gastos registrados.</p> : null}
@@ -209,12 +281,17 @@ export function FinancesPage() {
               <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Historial de liquidaciones</h2>
               <div className="mt-4 space-y-3">
                 {settlements.map((settlement) => (
-                  <div key={settlement.id} className="rounded-2xl bg-white/70 p-3 dark:bg-white/5">
-                    <p className="font-semibold text-stone-950 dark:text-white">{formatMoney(Number(settlement.amount))}</p>
-                    <p className="text-sm text-stone-600 dark:text-stone-300">
-                      {nameFor(settlement.from_user, profile, partner)} pagó a {nameFor(settlement.to_user, profile, partner)}
-                    </p>
-                    <p className="text-xs text-stone-500 dark:text-stone-400">{formatDate(settlement.settled_at)}</p>
+                  <div key={settlement.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 p-3 dark:bg-white/5">
+                    <div>
+                      <p className="font-semibold text-stone-950 dark:text-white">{formatMoney(Number(settlement.amount))}</p>
+                      <p className="text-sm text-stone-600 dark:text-stone-300">
+                        {nameFor(settlement.from_user, profile, partner)} pagó a {nameFor(settlement.to_user, profile, partner)}
+                      </p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400">{formatDate(settlement.settled_at)}</p>
+                    </div>
+                    <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => openEditSettlementModal(settlement)} aria-label="Editar liquidacion">
+                      <Pencil size={16} />
+                    </Button>
                   </div>
                 ))}
                 {!settlements.length ? <p className="text-sm text-stone-500 dark:text-stone-400">Sin liquidaciones.</p> : null}
@@ -224,7 +301,7 @@ export function FinancesPage() {
         </>
       )}
 
-      <Modal open={expenseOpen} title="Registrar gasto" onClose={() => setExpenseOpen(false)}>
+      <Modal open={expenseOpen} title={editingExpense ? 'Editar gasto' : 'Registrar gasto'} onClose={closeExpenseModal}>
         <form className="space-y-4" onSubmit={expenseForm.handleSubmit(onExpenseSubmit)}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Monto" type="number" step="0.01" error={expenseForm.formState.errors.amount?.message} {...expenseForm.register('amount', { valueAsNumber: true })} />
@@ -250,12 +327,12 @@ export function FinancesPage() {
             <Input label="% de tu pareja" type="number" min="0" max="100" error={expenseForm.formState.errors.partner_percentage?.message} {...expenseForm.register('partner_percentage', { valueAsNumber: true })} />
           </div>
           <Button className="w-full" disabled={busy}>
-            Guardar gasto
+            {editingExpense ? 'Guardar cambios' : 'Guardar gasto'}
           </Button>
         </form>
       </Modal>
 
-      <Modal open={settlementOpen} title="Registrar liquidación" onClose={() => setSettlementOpen(false)}>
+      <Modal open={settlementOpen} title={editingSettlement ? 'Editar liquidacion' : 'Registrar liquidacion'} onClose={closeSettlementModal}>
         <form className="space-y-4" onSubmit={settlementForm.handleSubmit(onSettlementSubmit)}>
           <Input label="Monto" type="number" step="0.01" error={settlementForm.formState.errors.amount?.message} {...settlementForm.register('amount', { valueAsNumber: true })} />
           <div className="grid gap-4 sm:grid-cols-2">
@@ -278,7 +355,7 @@ export function FinancesPage() {
           </div>
           <Input label="Nota" error={settlementForm.formState.errors.note?.message} {...settlementForm.register('note')} />
           <Button className="w-full" disabled={busy}>
-            Registrar liquidación
+            {editingSettlement ? 'Guardar cambios' : 'Registrar liquidacion'}
           </Button>
         </form>
       </Modal>
