@@ -54,7 +54,7 @@ const taskStatusMeta: Record<TaskStatus, { label: string; className: string; car
 const taskStatusActions: TaskStatus[] = ['pending', 'in_progress', 'done', 'not_done', 'postponed']
 
 function assigneeLabel(task: TaskItem, profile: UserProfile | null, partner: UserProfile | null) {
-  if (!task.assigned_to) return 'Sin asignar'
+  if (!task.assigned_to) return 'Asignada a ambos'
   if (task.assigned_to === profile?.id) return profile.full_name ?? 'Tu'
   if (task.assigned_to === partner?.id) return partner.full_name ?? 'Tu pareja'
   return 'Usuario no disponible'
@@ -277,7 +277,7 @@ export function TasksPage() {
           })}
         </div>
       ) : (
-        <EmptyState title="Sin tareas" description="Crea la primera tarea compartida y asignala a quien corresponda." actionLabel="Nueva tarea" onAction={openTaskModal} />
+        <EmptyState title="Sin tareas" description="Crea la primera tarea compartida y asignala a una persona o a ambos." actionLabel="Nueva tarea" onAction={openTaskModal} />
       )}
 
       <Modal
@@ -327,7 +327,7 @@ export function TasksPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Fecha limite" type="date" error={errors.due_date?.message} {...register('due_date')} />
             <Select label="Asignada a" error={errors.assigned_to?.message} {...register('assigned_to')}>
-              <option value="">Sin asignar</option>
+              <option value="">Ambos</option>
               {members.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.full_name ?? (member.id === profile?.id ? 'Tu' : 'Tu pareja')}

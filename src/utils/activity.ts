@@ -53,7 +53,7 @@ export function eventActivity(event: EventItem): ActivityItem {
     id: event.id,
     module: 'calendar',
     title: event.title,
-    description: 'Agrego un evento al calendario.',
+    description: event.actor_type === 'couple' ? 'Agregaron un evento como pareja.' : 'Agrego un evento al calendario.',
     createdBy: event.created_by,
     createdAt: event.created_at,
   }
@@ -64,7 +64,7 @@ export function taskActivity(task: TaskItem): ActivityItem {
     id: task.id,
     module: 'tasks',
     title: task.title,
-    description: 'Agrego una tarea.',
+    description: task.assigned_to ? 'Agrego una tarea.' : 'Agrego una tarea para ambos.',
     createdBy: task.created_by,
     createdAt: task.created_at,
   }
