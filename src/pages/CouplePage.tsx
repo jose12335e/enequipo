@@ -8,6 +8,7 @@ import { EmptyState } from '../components/EmptyState'
 import { Input } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { inviteCodeSchema, type InviteCodeInput } from '../lib/validations/couple'
+import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { uploadCoupleAvatar } from '../services/avatarService'
 import { createCouple, joinCouple, unlinkCouple, updateCoupleAvatar } from '../services/coupleService'
 import { useAuthStore } from '../store/authStore'
@@ -34,6 +35,18 @@ export function CouplePage() {
     setBusy(true)
     try {
       const created = await createCouple(profile.id)
+      void recordPartnerActivity({
+        coupleId: created.id,
+        actorId: profile.id,
+        targetUserId: null,
+        module: 'couple',
+        action: 'created',
+        entityType: 'couple',
+        entityId: created.id,
+        title: 'Pareja creada',
+        body: 'Creo el espacio de pareja.',
+        newData: { ...created },
+      })
       await refreshContext()
       pushToast({ type: 'success', title: 'Pareja creada', description: `Codigo ${created.invite_code}, valido por 48 horas.` })
     } catch (error) {
@@ -69,6 +82,20 @@ export function CouplePage() {
     if (!confirmed) return
     setBusy(true)
     try {
+      if (profile) {
+        await recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'couple',
+          action: 'deleted',
+          entityType: 'couple',
+          entityId: couple.id,
+          title: 'Pareja desvinculada',
+          body: 'Desvinculo la pareja.',
+          oldData: { ...couple },
+        })
+      }
       await unlinkCouple(couple.id)
       await refreshContext()
       pushToast({ type: 'success', title: 'Pareja desvinculada' })
@@ -92,6 +119,21 @@ export function CouplePage() {
       const avatarUrl = await uploadCoupleAvatar(couple.id, file)
       await updateCoupleAvatar(couple.id, avatarUrl)
       await refreshContext()
+      if (profile) {
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'couple',
+          action: 'uploaded',
+          entityType: 'couple',
+          entityId: couple.id,
+          title: 'Foto de pareja actualizada',
+          body: 'Actualizo la foto de pareja.',
+          oldData: { avatar_url: couple.avatar_url },
+          newData: { avatar_url: avatarUrl },
+        })
+      }
       pushToast({ type: 'success', title: 'Foto de pareja actualizada' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos subir la foto', description: (error as Error).message })

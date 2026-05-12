@@ -112,6 +112,53 @@ export interface DebtSettlement {
   created_at: string
 }
 
+export type ActivityModule = 'calendar' | 'tasks' | 'notes' | 'finances' | 'couple' | 'profile'
+export type ActivityAction = 'created' | 'updated' | 'deleted' | 'status_changed' | 'settled' | 'uploaded'
+
+export interface ReleaseNote {
+  id: string
+  title: string
+  summary: string
+  highlights: string[]
+  published_at: string
+  is_active: boolean
+}
+
+export interface ReleaseNoteRead {
+  release_id: string
+  user_id: string
+  read_at: string
+}
+
+export interface ActivityNotification {
+  id: string
+  couple_id: string
+  actor_id: string
+  target_user_id: string
+  module: ActivityModule
+  action: ActivityAction
+  entity_type: string
+  entity_id: string | null
+  title: string
+  body: string | null
+  created_at: string
+  read_at: string | null
+  dismissed_at: string | null
+}
+
+export interface AuditLog {
+  id: string
+  couple_id: string
+  actor_id: string | null
+  module: string
+  action: string
+  entity_type: string
+  entity_id: string | null
+  old_data: Record<string, unknown> | null
+  new_data: Record<string, unknown> | null
+  created_at: string
+}
+
 export interface CoupleContext {
   profile: UserProfile | null
   couple: Couple | null

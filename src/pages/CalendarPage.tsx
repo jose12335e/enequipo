@@ -24,6 +24,7 @@ import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { eventSchema, type EventFormInput, type EventInput } from '../lib/validations/events'
 import { createEventSeries, deleteEvent, listEvents, subscribeToEvents, updateEvent, updateEventStatus } from '../services/eventsService'
+import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { useToastStore } from '../store/toastStore'
 import type { EventItem, EventStatus } from '../types/app'
 import { formatDateTime } from '../utils/format'
@@ -204,10 +205,37 @@ export function CalendarPage() {
       if (editingEvent) {
         const updated = await updateEvent(editingEvent.id, input)
         setEvents((current) => current.map((event) => (event.id === updated.id ? (updated as EventItem) : event)))
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'calendar',
+          action: 'updated',
+          entityType: 'event',
+          entityId: updated.id,
+          title: updated.title,
+          body: 'Edito un evento del calendario.',
+          oldData: { ...editingEvent },
+          newData: { ...(updated as EventItem) },
+        })
         pushToast({ type: 'success', title: 'Evento actualizado' })
       } else {
         const created = await createEventSeries(couple.id, profile.id, input)
         setEvents((current) => [...current, ...created])
+        for (const event of created) {
+          void recordPartnerActivity({
+            coupleId: couple.id,
+            actorId: profile.id,
+            targetUserId: partner?.id,
+            module: 'calendar',
+            action: 'created',
+            entityType: 'event',
+            entityId: event.id,
+            title: event.title,
+            body: event.actor_type === 'couple' ? 'Agregaron un evento como pareja.' : 'Agrego un evento al calendario.',
+            newData: { ...event },
+          })
+        }
         pushToast({
           type: 'success',
           title: created.length > 1 ? 'Eventos creados' : 'Evento creado',
@@ -236,6 +264,20 @@ export function CalendarPage() {
 
   async function removeEvent(event: EventItem) {
     await deleteEvent(event.id)
+    if (couple && profile) {
+      void recordPartnerActivity({
+        coupleId: couple.id,
+        actorId: profile.id,
+        targetUserId: partner?.id,
+        module: 'calendar',
+        action: 'deleted',
+        entityType: 'event',
+        entityId: event.id,
+        title: event.title,
+        body: 'Elimino un evento del calendario.',
+        oldData: { ...event },
+      })
+    }
     pushToast({ type: 'success', title: 'Evento eliminado' })
   }
 
@@ -244,6 +286,21 @@ export function CalendarPage() {
     try {
       const updated = await updateEventStatus(event.id, status, note)
       setEvents((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      if (couple && profile) {
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'calendar',
+          action: 'status_changed',
+          entityType: 'event',
+          entityId: event.id,
+          title: event.title,
+          body: `Cambio el estado del evento a ${eventStatusMeta[status].label}.`,
+          oldData: { ...event },
+          newData: { ...updated },
+        })
+      }
       pushToast({ type: 'success', title: 'Estado actualizado' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos actualizar el estado', description: (error as Error).message })

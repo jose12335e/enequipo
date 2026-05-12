@@ -10,6 +10,7 @@ import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
 import { taskSchema, type TaskInput } from '../lib/validations/tasks'
+import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { createTask, deleteTask, listTasks, subscribeToTasks, updateTask, updateTaskStatus } from '../services/tasksService'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
@@ -132,9 +133,34 @@ export function TasksPage() {
       if (editingTask) {
         const updated = await updateTask(editingTask.id, input)
         setTasks((current) => current.map((task) => (task.id === updated.id ? updated : task)))
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'tasks',
+          action: 'updated',
+          entityType: 'task',
+          entityId: updated.id,
+          title: updated.title,
+          body: 'Edito una tarea.',
+          oldData: { ...editingTask },
+          newData: { ...updated },
+        })
         pushToast({ type: 'success', title: 'Tarea actualizada' })
       } else {
-        await createTask(couple.id, profile.id, input)
+        const created = await createTask(couple.id, profile.id, input)
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'tasks',
+          action: 'created',
+          entityType: 'task',
+          entityId: created.id,
+          title: created.title,
+          body: created.assigned_to ? 'Agrego una tarea.' : 'Agrego una tarea para ambos.',
+          newData: { ...created },
+        })
         pushToast({ type: 'success', title: 'Tarea creada' })
       }
       reset({ title: '', description: '', priority: 'medium', status: 'pending', due_date: '', assigned_to: '' })
@@ -152,6 +178,21 @@ export function TasksPage() {
     try {
       const updated = await updateTaskStatus(task.id, status, note)
       setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      if (couple && profile) {
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'tasks',
+          action: 'status_changed',
+          entityType: 'task',
+          entityId: task.id,
+          title: task.title,
+          body: `Cambio el estado de la tarea a ${taskStatusMeta[status].label}.`,
+          oldData: { ...task },
+          newData: { ...updated },
+        })
+      }
       pushToast({ type: 'success', title: 'Estado actualizado' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos actualizar la tarea', description: (error as Error).message })
@@ -185,6 +226,20 @@ export function TasksPage() {
 
   async function removeTask(task: TaskItem) {
     await deleteTask(task.id)
+    if (couple && profile) {
+      void recordPartnerActivity({
+        coupleId: couple.id,
+        actorId: profile.id,
+        targetUserId: partner?.id,
+        module: 'tasks',
+        action: 'deleted',
+        entityType: 'task',
+        entityId: task.id,
+        title: task.title,
+        body: 'Elimino una tarea.',
+        oldData: { ...task },
+      })
+    }
     pushToast({ type: 'success', title: 'Tarea eliminada' })
   }
 

@@ -1,33 +1,58 @@
 import { Bell, Check, EyeOff, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { markReleaseNotesRead, markReleaseRead, listUnreadReleaseNotes } from '../services/releaseNotesService'
 import { useAuthStore } from '../store/authStore'
-import { markReleaseNotesRead, markReleaseRead, unreadReleaseNotes } from '../utils/releaseNotes'
+import type { ReleaseNote } from '../types/app'
 
 export function UpdateAnnouncement() {
   const profile = useAuthStore((state) => state.profile)
   const [hiddenReleaseIds, setHiddenReleaseIds] = useState<string[]>([])
+  const [unread, setUnread] = useState<ReleaseNote[]>([])
 
-  const unread = profile
-    ? unreadReleaseNotes(profile.id).filter((release) => !hiddenReleaseIds.includes(release.id))
-    : []
-  const visible = unread.length > 0
+  useEffect(() => {
+    if (!profile) return
+
+    let active = true
+    void listUnreadReleaseNotes(profile.id)
+      .then((releases) => {
+        if (active) setUnread(releases)
+      })
+      .catch((error) => {
+        console.warn('DuoLife release notes skipped', error)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [profile])
+
+  const visibleUnread = unread.filter((release) => !hiddenReleaseIds.includes(release.id))
+  const visible = visibleUnread.length > 0
 
   if (!profile || !visible) return null
 
   function hideForNow() {
-    setHiddenReleaseIds((current) => [...new Set([...current, ...unread.map((release) => release.id)])])
+    setHiddenReleaseIds((current) => [...new Set([...current, ...visibleUnread.map((release) => release.id)])])
   }
 
   function markAllAsRead() {
     if (!profile) return
-    markReleaseNotesRead(profile.id, unread)
-    hideForNow()
+    void markReleaseNotesRead(profile.id, visibleUnread)
+      .then(() => {
+        setUnread((current) => current.filter((release) => !visibleUnread.some((visibleRelease) => visibleRelease.id === release.id)))
+        hideForNow()
+      })
+      .catch((error) => console.warn('DuoLife release notes read skipped', error))
   }
 
   function markOneAsRead(releaseId: string) {
     if (!profile) return
-    markReleaseRead(profile.id, releaseId)
-    setHiddenReleaseIds((current) => [...new Set([...current, releaseId])])
+    void markReleaseRead(profile.id, releaseId)
+      .then(() => {
+        setUnread((current) => current.filter((release) => release.id !== releaseId))
+        setHiddenReleaseIds((current) => [...new Set([...current, releaseId])])
+      })
+      .catch((error) => console.warn('DuoLife release note read skipped', error))
   }
 
   return (
@@ -40,9 +65,9 @@ export function UpdateAnnouncement() {
           <Bell size={21} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-blush-600 dark:text-blush-200">Actualizacion</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-blush-600 dark:text-blush-200">Novedades</p>
           <h2 className="mt-1 text-lg font-bold text-stone-950 dark:text-white">
-            {unread.length === 1 ? 'Tienes 1 novedad pendiente' : `Tienes ${unread.length} novedades pendientes`}
+            {visibleUnread.length === 1 ? 'Tienes 1 novedad pendiente' : `Tienes ${visibleUnread.length} novedades pendientes`}
           </h2>
           <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">Cada persona marca sus novedades como leidas por separado.</p>
         </div>
@@ -57,7 +82,7 @@ export function UpdateAnnouncement() {
       </div>
 
       <div className="mt-4 space-y-3">
-        {unread.map((release) => (
+        {visibleUnread.map((release) => (
           <article key={release.id} className="rounded-2xl bg-blush-50/80 p-3 dark:bg-white/5">
             <div className="flex items-start justify-between gap-3">
               <div>

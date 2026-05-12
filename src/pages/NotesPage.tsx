@@ -9,6 +9,7 @@ import { Input, Textarea } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { noteSchema, type NoteInput } from '../lib/validations/notes'
+import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { createNote, deleteNote, listNotes, updateNote } from '../services/notesService'
 import { useToastStore } from '../store/toastStore'
 import type { Note } from '../types/app'
@@ -18,7 +19,7 @@ import { markModuleActivitySeen, noteActivity } from '../utils/activity'
 
 export function NotesPage() {
   const navigate = useNavigate()
-  const { hasCouple, couple, profile } = useCoupleRequired()
+  const { hasCouple, couple, profile, partner } = useCoupleRequired()
   const pushToast = useToastStore((state) => state.push)
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,9 +77,34 @@ export function NotesPage() {
     setBusy(true)
     try {
       if (editingNote) {
-        await updateNote(editingNote.id, input)
+        const updated = await updateNote(editingNote.id, input)
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'notes',
+          action: 'updated',
+          entityType: 'note',
+          entityId: updated.id,
+          title: updated.title,
+          body: 'Edito una nota.',
+          oldData: { ...editingNote },
+          newData: { ...updated },
+        })
       } else {
-        await createNote(couple.id, profile.id, input)
+        const created = await createNote(couple.id, profile.id, input)
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'notes',
+          action: 'created',
+          entityType: 'note',
+          entityId: created.id,
+          title: created.title,
+          body: 'Agrego una nota.',
+          newData: { ...created },
+        })
       }
       await refresh()
       reset({ title: '', content: '', category: '', is_shared: false })
@@ -93,6 +119,20 @@ export function NotesPage() {
 
   async function removeNote(note: Note) {
     await deleteNote(note.id)
+    if (couple && profile) {
+      void recordPartnerActivity({
+        coupleId: couple.id,
+        actorId: profile.id,
+        targetUserId: partner?.id,
+        module: 'notes',
+        action: 'deleted',
+        entityType: 'note',
+        entityId: note.id,
+        title: note.title,
+        body: 'Elimino una nota.',
+        oldData: { ...note },
+      })
+    }
     await refresh()
     pushToast({ type: 'success', title: 'Nota eliminada' })
   }

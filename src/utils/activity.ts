@@ -1,6 +1,4 @@
-import type { EventItem, Expense, Note, TaskItem, UserProfile } from '../types/app'
-
-export type ActivityModule = 'calendar' | 'tasks' | 'notes' | 'finances'
+import type { ActivityModule, EventItem, Expense, Note, TaskItem, UserProfile } from '../types/app'
 
 export interface ActivityItem {
   id: string
@@ -11,15 +9,11 @@ export interface ActivityItem {
   createdAt: string
 }
 
-const activityRoutes: Record<ActivityModule, string> = {
+const activityRoutes: Partial<Record<ActivityModule, string>> = {
   calendar: '/app/calendar',
   tasks: '/app/tasks',
   notes: '/app/notes',
   finances: '/app/finances',
-}
-
-function seenKey(userId: string) {
-  return `doulife:seen-activity:${userId}`
 }
 
 function preferenceKey(userId: string) {
@@ -27,25 +21,7 @@ function preferenceKey(userId: string) {
 }
 
 export function activityRoute(module: ActivityModule) {
-  return activityRoutes[module]
-}
-
-export function readSeenActivity(userId: string) {
-  try {
-    return new Set<string>(JSON.parse(localStorage.getItem(seenKey(userId)) ?? '[]') as string[])
-  } catch {
-    return new Set<string>()
-  }
-}
-
-export function markActivitySeen(userId: string, items: Pick<ActivityItem, 'id' | 'module'>[]) {
-  const seen = readSeenActivity(userId)
-  for (const item of items) seen.add(`${item.module}:${item.id}`)
-  localStorage.setItem(seenKey(userId), JSON.stringify([...seen]))
-}
-
-export function isActivitySeen(userId: string, item: Pick<ActivityItem, 'id' | 'module'>) {
-  return readSeenActivity(userId).has(`${item.module}:${item.id}`)
+  return activityRoutes[module] ?? '/app/dashboard'
 }
 
 export function eventActivity(event: EventItem): ActivityItem {
@@ -96,15 +72,14 @@ export function partnerUnseenActivity(userId: string, partner: UserProfile | nul
   if (!partner) return []
 
   return items
-    .filter((item) => item.createdBy === partner.id && !isActivitySeen(userId, item))
+    .filter((item) => item.createdBy === partner.id && item.createdBy !== userId)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
 }
 
 export function markModuleActivitySeen(userId: string, module: ActivityModule, items: ActivityItem[]) {
-  markActivitySeen(
-    userId,
-    items.filter((item) => item.module === module),
-  )
+  void userId
+  void module
+  void items
 }
 
 export function getDefaultEventColor(profile?: Pick<UserProfile, 'id' | 'default_event_color'> | null) {

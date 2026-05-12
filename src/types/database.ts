@@ -1,9 +1,13 @@
 import type {
   Couple,
+  ActivityNotification,
+  AuditLog,
   DebtSettlement,
   EventItem,
   Expense,
   Note,
+  ReleaseNote,
+  ReleaseNoteRead,
   SavingsGoal,
   TaskItem,
   UserProfile,
@@ -61,6 +65,30 @@ export interface Database {
         Row: DebtSettlement
         Insert: Insert<DebtSettlement, 'id' | 'created_at'>
         Update: Update<DebtSettlement>
+        Relationships: []
+      }
+      release_notes: {
+        Row: ReleaseNote
+        Insert: Insert<ReleaseNote, 'published_at' | 'is_active'>
+        Update: Update<ReleaseNote>
+        Relationships: []
+      }
+      release_note_reads: {
+        Row: ReleaseNoteRead
+        Insert: Insert<ReleaseNoteRead, 'read_at'>
+        Update: Update<ReleaseNoteRead>
+        Relationships: []
+      }
+      activity_notifications: {
+        Row: ActivityNotification
+        Insert: Insert<ActivityNotification, 'id' | 'created_at' | 'read_at' | 'dismissed_at'>
+        Update: Update<ActivityNotification>
+        Relationships: []
+      }
+      audit_logs: {
+        Row: AuditLog
+        Insert: Insert<AuditLog, 'id' | 'created_at' | 'actor_id' | 'old_data' | 'new_data'>
+        Update: Update<AuditLog>
         Relationships: []
       }
     }

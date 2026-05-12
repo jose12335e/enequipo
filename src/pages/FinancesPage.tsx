@@ -11,6 +11,7 @@ import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { StatCard } from '../components/StatCard'
 import { expenseSchema, settlementSchema, type ExpenseFormInput, type ExpenseInput, type SettlementInput } from '../lib/validations/expenses'
+import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { createExpense, createSettlement, deleteExpense, listExpenses, listSettlements, subscribeToExpenses, updateExpense, updateSettlement } from '../services/expensesService'
 import { useToastStore } from '../store/toastStore'
 import type { DebtSettlement, Expense, UserProfile } from '../types/app'
@@ -224,9 +225,34 @@ export function FinancesPage() {
     setBusy(true)
     try {
       if (editingExpense) {
-        await updateExpense(editingExpense.id, profile.id, partner.id, input)
+        const updated = await updateExpense(editingExpense.id, profile.id, partner.id, input)
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner.id,
+          module: 'finances',
+          action: 'updated',
+          entityType: 'expense',
+          entityId: updated.id,
+          title: updated.category,
+          body: 'Edito un gasto.',
+          oldData: { ...editingExpense },
+          newData: { ...updated },
+        })
       } else {
-        await createExpense(couple.id, profile.id, partner.id, input)
+        const created = await createExpense(couple.id, profile.id, partner.id, input)
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner.id,
+          module: 'finances',
+          action: 'created',
+          entityType: 'expense',
+          entityId: created.id,
+          title: created.category,
+          body: 'Registro un gasto.',
+          newData: { ...created },
+        })
       }
       await refresh()
       expenseForm.reset({ split_mode: '50_50', date: new Date().toISOString().slice(0, 10), paid_by: profile.id })
@@ -244,9 +270,38 @@ export function FinancesPage() {
     setBusy(true)
     try {
       if (editingSettlement) {
-        await updateSettlement(editingSettlement.id, input)
+        const updated = await updateSettlement(editingSettlement.id, input)
+        if (profile && partner) {
+          void recordPartnerActivity({
+            coupleId: couple.id,
+            actorId: profile.id,
+            targetUserId: partner.id,
+            module: 'finances',
+            action: 'updated',
+            entityType: 'debt_settlement',
+            entityId: updated.id,
+            title: 'Liquidacion actualizada',
+            body: 'Edito una liquidacion.',
+            oldData: { ...editingSettlement },
+            newData: { ...updated },
+          })
+        }
       } else {
-        await createSettlement(couple.id, input)
+        const created = await createSettlement(couple.id, input)
+        if (profile && partner) {
+          void recordPartnerActivity({
+            coupleId: couple.id,
+            actorId: profile.id,
+            targetUserId: partner.id,
+            module: 'finances',
+            action: 'settled',
+            entityType: 'debt_settlement',
+            entityId: created.id,
+            title: 'Liquidacion registrada',
+            body: 'Registro una liquidacion de deuda.',
+            newData: { ...created },
+          })
+        }
       }
       await refresh()
       settlementForm.reset()
@@ -265,6 +320,20 @@ export function FinancesPage() {
 
   async function removeExpense(expense: Expense) {
     await deleteExpense(expense.id)
+    if (couple && profile && partner) {
+      void recordPartnerActivity({
+        coupleId: couple.id,
+        actorId: profile.id,
+        targetUserId: partner.id,
+        module: 'finances',
+        action: 'deleted',
+        entityType: 'expense',
+        entityId: expense.id,
+        title: expense.category,
+        body: 'Elimino un gasto.',
+        oldData: { ...expense },
+      })
+    }
     await refresh()
     pushToast({ type: 'success', title: 'Gasto eliminado' })
   }

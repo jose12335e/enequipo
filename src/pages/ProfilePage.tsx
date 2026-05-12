@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { Button } from '../components/Button'
 import { Input } from '../components/Input'
+import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { uploadCoupleAvatar, uploadUserAvatar } from '../services/avatarService'
 import { signOut, updateProfile } from '../services/authService'
 import { updateCoupleAvatar } from '../services/coupleService'
@@ -50,6 +51,27 @@ export function ProfilePage() {
         await updateProfile(profile.id, { full_name: values.full_name, avatar_url: profile.avatar_url })
         await refreshContext()
       }
+      if (couple) {
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: null,
+          module: 'profile',
+          action: 'updated',
+          entityType: 'user_profile',
+          entityId: profile.id,
+          title: 'Perfil actualizado',
+          body: 'Actualizo su perfil.',
+          oldData: {
+            full_name: profile.full_name,
+            default_event_color: profile.default_event_color ?? null,
+          },
+          newData: {
+            full_name: values.full_name,
+            default_event_color: values.default_event_color,
+          },
+        })
+      }
       pushToast({ type: 'success', title: 'Perfil actualizado' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos guardar', description: (error as Error).message })
@@ -71,6 +93,21 @@ export function ProfilePage() {
       const avatarUrl = await uploadUserAvatar(profile.id, file)
       await updateProfile(profile.id, { full_name: profile.full_name, avatar_url: avatarUrl })
       await refreshContext()
+      if (couple) {
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: null,
+          module: 'profile',
+          action: 'uploaded',
+          entityType: 'user_profile',
+          entityId: profile.id,
+          title: 'Foto individual actualizada',
+          body: 'Actualizo su foto individual.',
+          oldData: { avatar_url: profile.avatar_url },
+          newData: { avatar_url: avatarUrl },
+        })
+      }
       pushToast({ type: 'success', title: 'Foto actualizada' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos subir la foto', description: (error as Error).message })
@@ -92,6 +129,21 @@ export function ProfilePage() {
       const avatarUrl = await uploadCoupleAvatar(couple.id, file)
       await updateCoupleAvatar(couple.id, avatarUrl)
       await refreshContext()
+      if (profile) {
+        void recordPartnerActivity({
+          coupleId: couple.id,
+          actorId: profile.id,
+          targetUserId: partner?.id,
+          module: 'couple',
+          action: 'uploaded',
+          entityType: 'couple',
+          entityId: couple.id,
+          title: 'Foto de pareja actualizada',
+          body: 'Actualizo la foto de pareja.',
+          oldData: { avatar_url: couple.avatar_url },
+          newData: { avatar_url: avatarUrl },
+        })
+      }
       pushToast({ type: 'success', title: 'Foto de pareja actualizada' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos subir la foto', description: (error as Error).message })

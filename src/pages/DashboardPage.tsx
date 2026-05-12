@@ -8,14 +8,13 @@ import { ListSkeleton } from '../components/Skeleton'
 import { StatCard } from '../components/StatCard'
 import { listEvents } from '../services/eventsService'
 import { listExpenses, listSettlements } from '../services/expensesService'
-import { listNotes } from '../services/notesService'
 import { listTasks } from '../services/tasksService'
 import { updateEventStatus } from '../services/eventsService'
-import type { DebtSettlement, EventItem, Expense, Note, TaskItem } from '../types/app'
+import { activityRoute, listUnreadActivityNotifications, markActivityNotificationsRead } from '../services/activityNotificationsService'
+import type { ActivityNotification, DebtSettlement, EventItem, Expense, TaskItem } from '../types/app'
 import { formatDateTime, formatMoney } from '../utils/format'
 import { calculateNetBalance } from '../utils/financial'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
-import { activityRoute, eventActivity, expenseActivity, markActivitySeen, noteActivity, partnerUnseenActivity, taskActivity } from '../utils/activity'
 import { useToastStore } from '../store/toastStore'
 
 export function DashboardPage() {
@@ -24,21 +23,27 @@ export function DashboardPage() {
   const pushToast = useToastStore((state) => state.push)
   const [events, setEvents] = useState<EventItem[]>([])
   const [tasks, setTasks] = useState<TaskItem[]>([])
-  const [notes, setNotes] = useState<Note[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [settlements, setSettlements] = useState<DebtSettlement[]>([])
+  const [notifications, setNotifications] = useState<ActivityNotification[]>([])
   const [ignoredActivity, setIgnoredActivity] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!couple) return
-    Promise.all([listEvents(couple.id), listTasks(couple.id), listNotes(couple.id), listExpenses(couple.id), listSettlements(couple.id)])
-      .then(([eventRows, taskRows, noteRows, expenseRows, settlementRows]) => {
+    Promise.all([
+      listEvents(couple.id),
+      listTasks(couple.id),
+      listExpenses(couple.id),
+      listSettlements(couple.id),
+      listUnreadActivityNotifications(),
+    ])
+      .then(([eventRows, taskRows, expenseRows, settlementRows, notificationRows]) => {
         setEvents(eventRows)
         setTasks(taskRows)
-        setNotes(noteRows)
         setExpenses(expenseRows)
         setSettlements(settlementRows)
+        setNotifications(notificationRows)
       })
       .finally(() => setLoading(false))
   }, [couple])
@@ -55,16 +60,7 @@ export function DashboardPage() {
         .slice(0, 3),
     [events, now],
   )
-  const unseenActivity = useMemo(() => {
-    if (!profile) return []
-    return partnerUnseenActivity(profile.id, partner, [
-      ...events.map(eventActivity),
-      ...tasks.map(taskActivity),
-      ...notes.map(noteActivity),
-      ...expenses.map(expenseActivity),
-    ])
-  }, [events, expenses, notes, partner, profile, tasks])
-  const visibleActivity = ignoredActivity ? [] : unseenActivity.slice(0, 3)
+  const visibleActivity = ignoredActivity ? [] : notifications.slice(0, 3)
   const overdueEvents = useMemo(
     () =>
       events
@@ -94,7 +90,8 @@ export function DashboardPage() {
 
   function openActivity() {
     if (!profile || !visibleActivity.length) return
-    markActivitySeen(profile.id, unseenActivity)
+    void markActivityNotificationsRead(visibleActivity).catch((error) => console.warn('DuoLife activity read skipped', error))
+    setNotifications((current) => current.filter((notification) => !visibleActivity.some((visibleNotification) => visibleNotification.id === notification.id)))
     navigate(activityRoute(visibleActivity[0].module))
   }
 
@@ -143,8 +140,8 @@ export function DashboardPage() {
                     </h2>
                     <div className="mt-2 space-y-1 text-sm text-stone-600 dark:text-stone-300">
                       {visibleActivity.map((item) => (
-                        <p key={`${item.module}:${item.id}`}>
-                          <span className="font-semibold">{item.title}</span> - {item.description}
+                        <p key={item.id}>
+                          <span className="font-semibold">{item.title}</span> - {item.body}
                         </p>
                       ))}
                     </div>
