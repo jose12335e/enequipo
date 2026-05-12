@@ -2,6 +2,7 @@ export interface UserProfile {
   id: string
   full_name: string | null
   avatar_url: string | null
+  default_event_color?: string | null
   couple_id: string | null
   created_at: string
   updated_at: string

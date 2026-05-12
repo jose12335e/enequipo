@@ -1,6 +1,9 @@
 alter table public.couples
   add column if not exists avatar_url text;
 
+alter table public.user_profiles
+  add column if not exists default_event_color text default '#ef9fb5';
+
 alter table public.events
   add column if not exists actor_type text default 'user';
 

@@ -28,6 +28,7 @@ import { useToastStore } from '../store/toastStore'
 import type { EventItem, EventStatus } from '../types/app'
 import { formatDateTime } from '../utils/format'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
+import { eventActivity, getDefaultEventColor, markModuleActivitySeen } from '../utils/activity'
 
 const eventStatusMeta: Record<EventStatus, { label: string; className: string; icon: typeof Clock3 }> = {
   pending: {
@@ -138,6 +139,7 @@ export function CalendarPage() {
 
   function openEventModal() {
     const day = selectedDayValue()
+    const defaultColor = getDefaultEventColor(profile)
     setEditingEvent(null)
     reset({
       title: '',
@@ -145,7 +147,7 @@ export function CalendarPage() {
       start_at: `${day}T09:00`,
       end_at: `${day}T10:00`,
       location: '',
-      color: '#ef9fb5',
+      color: defaultColor,
       is_shared: true,
       actor_type: 'user',
       repeat_frequency: 'none',
@@ -182,12 +184,18 @@ export function CalendarPage() {
   useEffect(() => {
     if (!couple) return
     listEvents(couple.id)
-      .then(setEvents)
+      .then((rows) => {
+        setEvents(rows)
+        if (profile) markModuleActivitySeen(profile.id, 'calendar', rows.map(eventActivity))
+      })
       .finally(() => setLoading(false))
     return subscribeToEvents(couple.id, () => {
-      void listEvents(couple.id).then(setEvents)
+      void listEvents(couple.id).then((rows) => {
+        setEvents(rows)
+        if (profile) markModuleActivitySeen(profile.id, 'calendar', rows.map(eventActivity))
+      })
     })
-  }, [couple])
+  }, [couple, profile])
 
   async function onSubmit(input: EventInput) {
     if (!couple || !profile) return
@@ -212,7 +220,7 @@ export function CalendarPage() {
         start_at: `${selectedDayValue()}T09:00`,
         end_at: `${selectedDayValue()}T10:00`,
         location: '',
-        color: '#ef9fb5',
+        color: getDefaultEventColor(profile),
         is_shared: true,
         actor_type: 'user',
         repeat_frequency: 'none',

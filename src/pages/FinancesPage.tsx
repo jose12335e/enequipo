@@ -17,6 +17,7 @@ import type { DebtSettlement, Expense, UserProfile } from '../types/app'
 import { calculateNetBalance, monthlyTotalsByCategory, topMonthlySpender } from '../utils/financial'
 import { formatDate, formatMoney } from '../utils/format'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
+import { expenseActivity, markModuleActivitySeen } from '../utils/activity'
 
 function nameFor(id: string | null | undefined, profile: UserProfile | null, partner: UserProfile | null) {
   if (!id) return 'Usuario no disponible'
@@ -54,7 +55,8 @@ export function FinancesPage() {
     const [expenseRows, settlementRows] = await Promise.all([listExpenses(couple.id), listSettlements(couple.id)])
     setExpenses(expenseRows)
     setSettlements(settlementRows)
-  }, [couple])
+    if (profile) markModuleActivitySeen(profile.id, 'finances', expenseRows.map(expenseActivity))
+  }, [couple, profile])
 
   useEffect(() => {
     if (!couple) return
@@ -62,12 +64,13 @@ export function FinancesPage() {
       .then(([expenseRows, settlementRows]) => {
         setExpenses(expenseRows)
         setSettlements(settlementRows)
+        if (profile) markModuleActivitySeen(profile.id, 'finances', expenseRows.map(expenseActivity))
       })
       .finally(() => setLoading(false))
     return subscribeToExpenses(couple.id, () => {
       void refresh()
     })
-  }, [couple, refresh])
+  }, [couple, profile, refresh])
 
   const balance = useMemo(() => {
     if (!profile || !partner) return null

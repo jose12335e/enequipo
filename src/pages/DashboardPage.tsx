@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, CircleDollarSign, Plus } from 'lucide-react'
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, CircleDollarSign, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
@@ -8,27 +8,35 @@ import { ListSkeleton } from '../components/Skeleton'
 import { StatCard } from '../components/StatCard'
 import { listEvents } from '../services/eventsService'
 import { listExpenses, listSettlements } from '../services/expensesService'
+import { listNotes } from '../services/notesService'
 import { listTasks } from '../services/tasksService'
-import type { DebtSettlement, EventItem, Expense, TaskItem } from '../types/app'
+import { updateEventStatus } from '../services/eventsService'
+import type { DebtSettlement, EventItem, Expense, Note, TaskItem } from '../types/app'
 import { formatDateTime, formatMoney } from '../utils/format'
 import { calculateNetBalance } from '../utils/financial'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
+import { activityRoute, eventActivity, expenseActivity, markActivitySeen, noteActivity, partnerUnseenActivity, taskActivity } from '../utils/activity'
+import { useToastStore } from '../store/toastStore'
 
 export function DashboardPage() {
   const navigate = useNavigate()
   const { hasCouple, couple, profile, partner } = useCoupleRequired()
+  const pushToast = useToastStore((state) => state.push)
   const [events, setEvents] = useState<EventItem[]>([])
   const [tasks, setTasks] = useState<TaskItem[]>([])
+  const [notes, setNotes] = useState<Note[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [settlements, setSettlements] = useState<DebtSettlement[]>([])
+  const [ignoredActivity, setIgnoredActivity] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!couple) return
-    Promise.all([listEvents(couple.id), listTasks(couple.id), listExpenses(couple.id), listSettlements(couple.id)])
-      .then(([eventRows, taskRows, expenseRows, settlementRows]) => {
+    Promise.all([listEvents(couple.id), listTasks(couple.id), listNotes(couple.id), listExpenses(couple.id), listSettlements(couple.id)])
+      .then(([eventRows, taskRows, noteRows, expenseRows, settlementRows]) => {
         setEvents(eventRows)
         setTasks(taskRows)
+        setNotes(noteRows)
         setExpenses(expenseRows)
         setSettlements(settlementRows)
       })
@@ -45,6 +53,24 @@ export function DashboardPage() {
         .slice()
         .sort((left, right) => new Date(right.start_at).getTime() - new Date(left.start_at).getTime())
         .slice(0, 3),
+    [events, now],
+  )
+  const unseenActivity = useMemo(() => {
+    if (!profile) return []
+    return partnerUnseenActivity(profile.id, partner, [
+      ...events.map(eventActivity),
+      ...tasks.map(taskActivity),
+      ...notes.map(noteActivity),
+      ...expenses.map(expenseActivity),
+    ])
+  }, [events, expenses, notes, partner, profile, tasks])
+  const visibleActivity = ignoredActivity ? [] : unseenActivity.slice(0, 3)
+  const overdueEvents = useMemo(
+    () =>
+      events
+        .filter((event) => (event.status ?? 'pending') === 'pending')
+        .filter((event) => new Date(event.end_at ?? event.start_at) < now)
+        .slice(0, 4),
     [events, now],
   )
   const profilesById = useMemo(() => {
@@ -64,6 +90,22 @@ export function DashboardPage() {
     }
     const author = profilesById.get(event.created_by)
     return { src: author?.avatar_url, name: author?.full_name ?? 'Usuario no disponible', kind: 'user' as const }
+  }
+
+  function openActivity() {
+    if (!profile || !visibleActivity.length) return
+    markActivitySeen(profile.id, unseenActivity)
+    navigate(activityRoute(visibleActivity[0].module))
+  }
+
+  async function markEventDone(event: EventItem) {
+    try {
+      const updated = await updateEventStatus(event.id, 'done', null)
+      setEvents((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      pushToast({ type: 'success', title: 'Evento marcado como hecho' })
+    } catch (error) {
+      pushToast({ type: 'error', title: 'No pudimos actualizar el evento', description: (error as Error).message })
+    }
   }
 
   if (!hasCouple) {
@@ -88,6 +130,68 @@ export function DashboardPage() {
         <ListSkeleton />
       ) : (
         <>
+          {visibleActivity.length ? (
+            <article className="rounded-2xl border border-blush-200 bg-blush-50/90 p-5 shadow-sm dark:border-blush-300/20 dark:bg-blush-300/10">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex gap-3">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blush-500 text-white">
+                    <Bell size={20} />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-stone-950 dark:text-white">
+                      {partner?.full_name ?? 'Tu pareja'} agrego algo recientemente
+                    </h2>
+                    <div className="mt-2 space-y-1 text-sm text-stone-600 dark:text-stone-300">
+                      {visibleActivity.map((item) => (
+                        <p key={`${item.module}:${item.id}`}>
+                          <span className="font-semibold">{item.title}</span> - {item.description}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button variant="secondary" onClick={() => setIgnoredActivity(true)}>
+                    Ignorar
+                  </Button>
+                  <Button onClick={openActivity}>Ver lo agregado</Button>
+                </div>
+              </div>
+            </article>
+          ) : null}
+
+          {overdueEvents.length ? (
+            <article className="rounded-2xl border border-amber-200 bg-amber-50/90 p-5 shadow-sm dark:border-amber-300/20 dark:bg-amber-300/10">
+              <div className="flex gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-500 text-white">
+                  <AlertTriangle size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-semibold text-stone-950 dark:text-white">Eventos pendientes de completar</h2>
+                  <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+                    Estos eventos ya pasaron y necesitan que indiquen si se realizaron.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    {overdueEvents.map((event) => (
+                      <div key={event.id} className="flex flex-col gap-3 rounded-2xl bg-white/70 p-3 dark:bg-white/5 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-stone-950 dark:text-white">{event.title}</p>
+                          <p className="text-sm text-stone-600 dark:text-stone-300">{formatDateTime(event.start_at)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="secondary" onClick={() => navigate('/app/calendar')}>
+                            Revisar
+                          </Button>
+                          <Button onClick={() => void markEventDone(event)}>Hecho</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-3">
             <StatCard label="Próximos eventos" value={String(upcomingEvents.length)} icon={<CalendarDays size={22} />} />
             <StatCard label="Tareas pendientes" value={String(pendingTasks.length)} icon={<CheckCircle2 size={22} />} />

@@ -16,6 +16,7 @@ import { useToastStore } from '../store/toastStore'
 import type { TaskItem, TaskStatus, UserProfile } from '../types/app'
 import { cn } from '../utils/cn'
 import { formatDate } from '../utils/format'
+import { markModuleActivitySeen, taskActivity } from '../utils/activity'
 
 const taskStatusMeta: Record<TaskStatus, { label: string; className: string; cardClassName: string; icon: typeof Clock3 }> = {
   pending: {
@@ -111,12 +112,18 @@ export function TasksPage() {
   useEffect(() => {
     if (!couple) return
     listTasks(couple.id)
-      .then(setTasks)
+      .then((rows) => {
+        setTasks(rows)
+        if (profile) markModuleActivitySeen(profile.id, 'tasks', rows.map(taskActivity))
+      })
       .finally(() => setLoading(false))
     return subscribeToTasks(couple.id, () => {
-      void listTasks(couple.id).then(setTasks)
+      void listTasks(couple.id).then((rows) => {
+        setTasks(rows)
+        if (profile) markModuleActivitySeen(profile.id, 'tasks', rows.map(taskActivity))
+      })
     })
-  }, [couple])
+  }, [couple, profile])
 
   async function onSubmit(input: TaskInput) {
     if (!couple || !profile) return

@@ -4,6 +4,7 @@ create table if not exists public.user_profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   full_name text,
   avatar_url text,
+  default_event_color text default '#ef9fb5',
   couple_id uuid,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -19,6 +20,9 @@ create table if not exists public.couples (
 
 alter table public.couples
   add column if not exists avatar_url text;
+
+alter table public.user_profiles
+  add column if not exists default_event_color text default '#ef9fb5';
 
 alter table public.user_profiles
   drop constraint if exists user_profiles_couple_id_fkey,

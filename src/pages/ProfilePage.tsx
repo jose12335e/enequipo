@@ -10,9 +10,11 @@ import { signOut, updateProfile } from '../services/authService'
 import { updateCoupleAvatar } from '../services/coupleService'
 import { useAuthStore } from '../store/authStore'
 import { useToastStore } from '../store/toastStore'
+import { getDefaultEventColor, saveDefaultEventColor } from '../utils/activity'
 
 interface ProfileForm {
   full_name: string
+  default_event_color: string
 }
 
 export function ProfilePage() {
@@ -27,6 +29,7 @@ export function ProfilePage() {
   const { register, handleSubmit } = useForm<ProfileForm>({
     values: {
       full_name: profile?.full_name ?? '',
+      default_event_color: getDefaultEventColor(profile),
     },
   })
 
@@ -34,8 +37,19 @@ export function ProfilePage() {
     if (!profile) return
     setBusy(true)
     try {
-      await updateProfile(profile.id, { full_name: values.full_name, avatar_url: profile.avatar_url })
-      await refreshContext()
+      saveDefaultEventColor(profile.id, values.default_event_color)
+      try {
+        await updateProfile(profile.id, {
+          full_name: values.full_name,
+          avatar_url: profile.avatar_url,
+          default_event_color: values.default_event_color,
+        })
+        await refreshContext()
+      } catch (error) {
+        if (!(error as Error).message.includes('default_event_color')) throw error
+        await updateProfile(profile.id, { full_name: values.full_name, avatar_url: profile.avatar_url })
+        await refreshContext()
+      }
       pushToast({ type: 'success', title: 'Perfil actualizado' })
     } catch (error) {
       pushToast({ type: 'error', title: 'No pudimos guardar', description: (error as Error).message })
@@ -138,6 +152,15 @@ export function ProfilePage() {
         </div>
 
         <Input label="Nombre completo" {...register('full_name')} />
+        <div className="rounded-2xl border border-white/70 bg-white/65 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <p className="font-semibold text-stone-950 dark:text-white">Configuracion</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+            <Input label="Color predeterminado para eventos" type="color" {...register('default_event_color')} />
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              Se usara al crear eventos nuevos. En cada evento puedes ajustarlo manualmente.
+            </p>
+          </div>
+        </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
           <Button icon={<Save size={17} />} disabled={busy}>

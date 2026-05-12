@@ -14,6 +14,7 @@ import { useToastStore } from '../store/toastStore'
 import type { Note } from '../types/app'
 import { formatDate } from '../utils/format'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
+import { markModuleActivitySeen, noteActivity } from '../utils/activity'
 
 export function NotesPage() {
   const navigate = useNavigate()
@@ -34,13 +35,18 @@ export function NotesPage() {
   useEffect(() => {
     if (!couple) return
     listNotes(couple.id)
-      .then(setNotes)
+      .then((rows) => {
+        setNotes(rows)
+        if (profile) markModuleActivitySeen(profile.id, 'notes', rows.map(noteActivity))
+      })
       .finally(() => setLoading(false))
-  }, [couple])
+  }, [couple, profile])
 
   async function refresh() {
     if (!couple) return
-    setNotes(await listNotes(couple.id))
+    const rows = await listNotes(couple.id)
+    setNotes(rows)
+    if (profile) markModuleActivitySeen(profile.id, 'notes', rows.map(noteActivity))
   }
 
   function openNoteModal() {

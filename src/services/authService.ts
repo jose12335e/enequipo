@@ -56,7 +56,7 @@ export async function getProfile(userId: string): Promise<UserProfile | null> {
   return data
 }
 
-export async function updateProfile(userId: string, values: Pick<UserProfile, 'full_name' | 'avatar_url'>) {
+export async function updateProfile(userId: string, values: Pick<UserProfile, 'full_name' | 'avatar_url'> & Partial<Pick<UserProfile, 'default_event_color'>>) {
   const { data, error } = await supabase
     .from('user_profiles')
     .update({ ...values, updated_at: new Date().toISOString() })
