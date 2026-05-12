@@ -5,7 +5,6 @@ import {
   endOfMonth,
   endOfWeek,
   format,
-  getHours,
   isSameDay,
   isSameMonth,
   startOfMonth,
@@ -56,6 +55,43 @@ const eventStatusMeta: Record<EventStatus, { label: string; className: string; i
 const statusActions: EventStatus[] = ['pending', 'done', 'not_done', 'postponed']
 const hourSlots = Array.from({ length: 18 }, (_, index) => index + 6)
 type CalendarView = 'month' | 'week' | 'day'
+
+function eventRange(event: EventItem) {
+  const start = new Date(event.start_at)
+  let end = event.end_at ? new Date(event.end_at) : new Date(start.getTime() + 60 * 60 * 1000)
+
+  if (end <= start) {
+    end = new Date(end.getTime() + 24 * 60 * 60 * 1000)
+  }
+
+  return { start, end }
+}
+
+function dayRange(day: Date) {
+  const start = new Date(day)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+  return { start, end }
+}
+
+function hourRange(day: Date, hour: number) {
+  const start = new Date(day)
+  start.setHours(hour, 0, 0, 0)
+  const end = new Date(start.getTime() + 60 * 60 * 1000)
+  return { start, end }
+}
+
+function overlaps(left: { start: Date; end: Date }, right: { start: Date; end: Date }) {
+  return left.start < right.end && left.end > right.start
+}
+
+function eventsForCalendarDay(events: EventItem[], day: Date) {
+  const range = dayRange(day)
+  return events
+    .filter((event) => overlaps(eventRange(event), range))
+    .slice()
+    .sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
+}
 
 export function CalendarPage() {
   const navigate = useNavigate()
@@ -343,20 +379,7 @@ export function CalendarPage() {
       end: endOfWeek(monthEnd, { weekStartsOn: 1 }),
     })
   }, [visibleMonth])
-  const eventsByDay = useMemo(() => {
-    const grouped = new Map<string, EventItem[]>()
-    for (const event of events) {
-      const key = format(new Date(event.start_at), 'yyyy-MM-dd')
-      const dayEvents = grouped.get(key) ?? []
-      dayEvents.push(event)
-      grouped.set(key, dayEvents)
-    }
-    return grouped
-  }, [events])
-  const selectedDayEvents = useMemo(() => {
-    const key = format(selectedDay, 'yyyy-MM-dd')
-    return (eventsByDay.get(key) ?? []).slice().sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
-  }, [eventsByDay, selectedDay])
+  const selectedDayEvents = useMemo(() => eventsForCalendarDay(events, selectedDay), [events, selectedDay])
   const selectedWeekDays = useMemo(
     () =>
       eachDayOfInterval({
@@ -396,12 +419,12 @@ export function CalendarPage() {
   }
 
   function eventsForDay(day: Date) {
-    const key = format(day, 'yyyy-MM-dd')
-    return (eventsByDay.get(key) ?? []).slice().sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
+    return eventsForCalendarDay(events, day)
   }
 
-  function eventsForHour(dayEvents: EventItem[], hour: number) {
-    return dayEvents.filter((event) => getHours(new Date(event.start_at)) === hour)
+  function eventsForHour(dayEvents: EventItem[], day: Date, hour: number) {
+    const range = hourRange(day, hour)
+    return dayEvents.filter((event) => overlaps(eventRange(event), range))
   }
 
   function openDay(day: Date) {
@@ -505,7 +528,7 @@ export function CalendarPage() {
             </div>
             <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-2">
               {monthDays.map((day) => {
-                const dayEvents = eventsByDay.get(format(day, 'yyyy-MM-dd')) ?? []
+                const dayEvents = eventsForDay(day)
                 const selected = isSameDay(day, selectedDay)
                 const inMonth = isSameMonth(day, visibleMonth)
                 return (
@@ -581,7 +604,7 @@ export function CalendarPage() {
                         </button>
                         <div className="space-y-1">
                           {hourSlots.map((hour) => {
-                            const hourEvents = eventsForHour(dayEvents, hour)
+                            const hourEvents = eventsForHour(dayEvents, day, hour)
                             return (
                               <div key={hour} className="min-h-16 rounded-2xl bg-white/50 p-2 dark:bg-white/[0.03]">
                                 <p className="text-[11px] font-semibold text-stone-400">{String(hour).padStart(2, '0')}:00</p>
@@ -620,7 +643,7 @@ export function CalendarPage() {
 
             <div className="mt-5 space-y-2">
               {hourSlots.map((hour) => {
-                const hourEvents = eventsForHour(selectedDayEvents, hour)
+                const hourEvents = eventsForHour(selectedDayEvents, selectedDay, hour)
                 return (
                   <div key={hour} className="grid gap-3 rounded-2xl bg-white/55 p-3 dark:bg-white/[0.03] md:grid-cols-[76px_1fr]">
                     <p className="text-sm font-semibold text-stone-500 dark:text-stone-400">{String(hour).padStart(2, '0')}:00</p>
