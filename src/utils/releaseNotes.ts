@@ -26,6 +26,16 @@ export const releaseNotes: ReleaseNote[] = [
       'Las tareas pueden quedar asignadas a ambos cuando son responsabilidad compartida.',
     ],
   },
+  {
+    id: '2026-05-12-flexible-expense-splits',
+    title: 'Division flexible de gastos',
+    summary: 'Finanzas ahora permite dividir gastos con proporciones reales de pareja, no solo 50/50.',
+    highlights: [
+      'Agregamos presets rapidos: 50/50, 60/40, 70/30, 80/20 y 100/0.',
+      'Ahora puedes usar porcentajes personalizados o montos exactos.',
+      'Antes de guardar veras quien pago, cuanto corresponde a cada uno y quien queda debiendo.',
+    ],
+  },
 ]
 
 function releaseKey(userId: string, releaseId: string) {
