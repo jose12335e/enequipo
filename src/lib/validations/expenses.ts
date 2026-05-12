@@ -6,6 +6,9 @@ export const expenseSchema = z
   .object({
     amount: z.number().positive('El monto debe ser mayor a 0'),
     category: z.string().min(2, 'La categoria es obligatoria'),
+    category_id: z.string().optional(),
+    subcategory_id: z.string().optional(),
+    account_id: z.string().min(1, 'Selecciona una cuenta'),
     description: z.string().optional(),
     date: z.string().min(1, 'La fecha es obligatoria'),
     paid_by: z.string().min(1, 'Selecciona quien pago'),
@@ -45,6 +48,9 @@ export const settlementSchema = z.object({
   amount: z.number().positive('El monto debe ser mayor a 0'),
   from_user: z.string().min(1, 'Selecciona quien paga'),
   to_user: z.string().min(1, 'Selecciona quien recibe'),
+  payment_method: z.string().optional(),
+  settlement_date: z.string().min(1, 'La fecha es obligatoria'),
+  linked_expense_ids: z.array(z.string()).min(1, 'Selecciona al menos un gasto a liquidar'),
   note: z.string().optional(),
 })
 

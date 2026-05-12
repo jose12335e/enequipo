@@ -5,10 +5,15 @@ import type {
   DebtSettlement,
   EventItem,
   Expense,
+  FinanceAccount,
+  FinanceCategory,
+  FinanceSubcategory,
+  FinanceTransaction,
   Note,
   ReleaseNote,
   ReleaseNoteRead,
   SavingsGoal,
+  SettlementExpense,
   TaskItem,
   UserProfile,
 } from './app'
@@ -63,8 +68,38 @@ export interface Database {
       }
       debt_settlements: {
         Row: DebtSettlement
-        Insert: Insert<DebtSettlement, 'id' | 'created_at'>
+        Insert: Insert<DebtSettlement, 'id' | 'created_at' | 'settled_at' | 'payment_method' | 'settlement_date' | 'linked_expense_ids' | 'created_by' | 'updated_at' | 'deleted_at'>
         Update: Update<DebtSettlement>
+        Relationships: []
+      }
+      finance_accounts: {
+        Row: FinanceAccount
+        Insert: Insert<FinanceAccount, 'id' | 'created_at' | 'updated_at' | 'initial_balance' | 'current_balance' | 'currency' | 'is_shared' | 'is_active'>
+        Update: Update<FinanceAccount>
+        Relationships: []
+      }
+      finance_categories: {
+        Row: FinanceCategory
+        Insert: Insert<FinanceCategory, 'id' | 'created_at' | 'updated_at' | 'kind' | 'sort_order' | 'is_active'>
+        Update: Update<FinanceCategory>
+        Relationships: []
+      }
+      finance_subcategories: {
+        Row: FinanceSubcategory
+        Insert: Insert<FinanceSubcategory, 'id' | 'created_at' | 'updated_at' | 'sort_order' | 'is_active'>
+        Update: Update<FinanceSubcategory>
+        Relationships: []
+      }
+      finance_transactions: {
+        Row: FinanceTransaction
+        Insert: Insert<FinanceTransaction, 'id' | 'created_at' | 'updated_at' | 'currency' | 'status' | 'is_shared' | 'is_settled' | 'deleted_at' | 'source_expense_id' | 'source_settlement_id'>
+        Update: Update<FinanceTransaction>
+        Relationships: []
+      }
+      settlement_expenses: {
+        Row: SettlementExpense
+        Insert: Insert<SettlementExpense, 'created_at'>
+        Update: Update<SettlementExpense>
         Relationships: []
       }
       release_notes: {

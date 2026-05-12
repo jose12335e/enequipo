@@ -15,7 +15,7 @@ import {
   Trash2,
   WalletCards,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -26,9 +26,10 @@ import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { StatCard } from '../components/StatCard'
 import { useCoupleRequired } from '../hooks/useCoupleRequired'
+import { useFinance } from '../hooks/useFinance'
 import { expenseSchema, settlementSchema, type ExpenseFormInput, type ExpenseInput, type SettlementInput } from '../lib/validations/expenses'
 import { recordPartnerActivity } from '../services/activityNotificationsService'
-import { createExpense, createSettlement, deleteExpense, listExpenses, listSettlements, subscribeToExpenses, updateExpense, updateSettlement } from '../services/expensesService'
+import { createExpense, createSettlement, deleteExpense, updateExpense, updateSettlement } from '../services/expensesService'
 import { useToastStore } from '../store/toastStore'
 import type { DebtSettlement, Expense, UserProfile } from '../types/app'
 import { expenseActivity, markModuleActivitySeen } from '../utils/activity'
@@ -98,6 +99,9 @@ function expenseFormValues(expense: Expense, profile: UserProfile | null, partne
   return {
     amount,
     category: expense.category,
+    category_id: expense.category_id ?? undefined,
+    subcategory_id: expense.subcategory_id ?? undefined,
+    account_id: expense.account_id ?? '',
     description: expense.description ?? '',
     date: expense.date,
     paid_by: expense.paid_by,
@@ -113,21 +117,20 @@ export function FinancesPage() {
   const navigate = useNavigate()
   const { hasCouple, couple, profile, partner } = useCoupleRequired()
   const pushToast = useToastStore((state) => state.push)
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  const [settlements, setSettlements] = useState<DebtSettlement[]>([])
-  const [loading, setLoading] = useState(true)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [settlementOpen, setSettlementOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [editingSettlement, setEditingSettlement] = useState<DebtSettlement | null>(null)
   const [selectedMonth, setSelectedMonth] = useState(() => startOfMonth(new Date()))
+  const finance = useFinance(couple?.id, profile?.id)
+  const { expenses, settlements, accounts, categories, subcategories, loading, refresh, createDefaultAccount } = finance
 
   const members = useMemo(() => [profile, partner].filter(Boolean) as UserProfile[], [partner, profile])
   const expenseForm = useForm<ExpenseFormInput, unknown, ExpenseInput>({
     resolver: zodResolver(expenseSchema),
     mode: 'onChange',
-    defaultValues: { split_mode: '50_50', date: new Date().toISOString().slice(0, 10), paid_by: profile?.id ?? '' },
+    defaultValues: { split_mode: '50_50', date: new Date().toISOString().slice(0, 10), paid_by: profile?.id ?? '', account_id: '' },
   })
   const settlementForm = useForm<SettlementInput>({
     resolver: zodResolver(settlementSchema),
@@ -140,28 +143,13 @@ export function FinancesPage() {
   const customPartnerPercentage = useWatch({ control: expenseForm.control, name: 'custom_partner_percentage' })
   const userAmount = useWatch({ control: expenseForm.control, name: 'user_amount' })
   const partnerAmount = useWatch({ control: expenseForm.control, name: 'partner_amount' })
-
-  const refresh = useCallback(async () => {
-    if (!couple) return
-    const [expenseRows, settlementRows] = await Promise.all([listExpenses(couple.id), listSettlements(couple.id)])
-    setExpenses(expenseRows)
-    setSettlements(settlementRows)
-    if (profile) markModuleActivitySeen(profile.id, 'finances', expenseRows.map(expenseActivity))
-  }, [couple, profile])
+  const categoryId = useWatch({ control: expenseForm.control, name: 'category_id' })
+  const watchedLinkedExpenseIds = useWatch({ control: settlementForm.control, name: 'linked_expense_ids' })
+  const linkedExpenseIds = useMemo(() => watchedLinkedExpenseIds ?? [], [watchedLinkedExpenseIds])
 
   useEffect(() => {
-    if (!couple) return
-    Promise.all([listExpenses(couple.id), listSettlements(couple.id)])
-      .then(([expenseRows, settlementRows]) => {
-        setExpenses(expenseRows)
-        setSettlements(settlementRows)
-        if (profile) markModuleActivitySeen(profile.id, 'finances', expenseRows.map(expenseActivity))
-      })
-      .finally(() => setLoading(false))
-    return subscribeToExpenses(couple.id, () => {
-      void refresh()
-    })
-  }, [couple, profile, refresh])
+    if (profile) markModuleActivitySeen(profile.id, 'finances', expenses.map(expenseActivity))
+  }, [expenses, profile])
 
   const balance = useMemo(() => {
     if (!profile || !partner) return null
@@ -176,6 +164,11 @@ export function FinancesPage() {
   const monthOpenTotal = useMemo(() => monthExpenses.filter((expense) => !expense.settled).reduce((sum, expense) => sum + Number(expense.amount), 0), [monthExpenses])
   const biggestCategory = chartData[0] ?? null
   const hasMonthData = monthExpenses.length > 0
+  const filteredSubcategories = useMemo(() => subcategories.filter((subcategory) => subcategory.category_id === categoryId), [categoryId, subcategories])
+  const selectedSettlementExpensesTotal = useMemo(
+    () => openExpenses.filter((expense) => linkedExpenseIds.includes(expense.id)).reduce((sum, expense) => sum + Number(expense.amount), 0),
+    [linkedExpenseIds, openExpenses],
+  )
 
   const splitSummary = useMemo(() => {
     if (!profile || !partner || !expenseAmount || expenseAmount <= 0) return null
@@ -207,11 +200,14 @@ export function FinancesPage() {
     setEditingExpense(null)
     expenseForm.reset({
       amount: undefined,
-      category: '',
       description: '',
       split_mode: '50_50',
       date: new Date().toISOString().slice(0, 10),
       paid_by: profile?.id ?? '',
+      account_id: accounts[0]?.id ?? '',
+      category: categories[0]?.name ?? '',
+      category_id: categories[0]?.id,
+      subcategory_id: undefined,
       custom_user_percentage: 50,
       custom_partner_percentage: 50,
       user_amount: undefined,
@@ -233,7 +229,15 @@ export function FinancesPage() {
 
   function openSettlementModal() {
     setEditingSettlement(null)
-    settlementForm.reset({ amount: undefined, from_user: '', to_user: '', note: '' })
+    settlementForm.reset({
+      amount: undefined,
+      from_user: '',
+      to_user: '',
+      payment_method: '',
+      settlement_date: new Date().toISOString().slice(0, 10),
+      linked_expense_ids: [],
+      note: '',
+    })
     setSettlementOpen(true)
   }
 
@@ -243,6 +247,9 @@ export function FinancesPage() {
       amount: Number(settlement.amount),
       from_user: settlement.from_user,
       to_user: settlement.to_user,
+      payment_method: settlement.payment_method ?? '',
+      settlement_date: settlement.settlement_date ?? settlement.settled_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      linked_expense_ids: settlement.linked_expense_ids ?? [],
       note: settlement.note ?? '',
     })
     setSettlementOpen(true)
@@ -291,7 +298,14 @@ export function FinancesPage() {
         })
       }
       await refresh()
-      expenseForm.reset({ split_mode: '50_50', date: new Date().toISOString().slice(0, 10), paid_by: profile.id })
+      expenseForm.reset({
+        split_mode: '50_50',
+        date: new Date().toISOString().slice(0, 10),
+        paid_by: profile.id,
+        account_id: accounts[0]?.id ?? '',
+        category: categories[0]?.name ?? '',
+        category_id: categories[0]?.id,
+      })
       closeExpenseModal()
       pushToast({ type: 'success', title: editingExpense ? 'Gasto actualizado' : 'Gasto registrado' })
     } catch (error) {
@@ -323,7 +337,7 @@ export function FinancesPage() {
           })
         }
       } else {
-        const created = await createSettlement(couple.id, input)
+        const created = await createSettlement(couple.id, profile?.id ?? '', input)
         if (profile && partner) {
           void recordPartnerActivity({
             coupleId: couple.id,
@@ -345,7 +359,7 @@ export function FinancesPage() {
       pushToast({
         type: 'success',
         title: editingSettlement ? 'Liquidacion actualizada' : 'Liquidacion registrada',
-        description: editingSettlement ? undefined : 'Los gastos abiertos fueron marcados como liquidados.',
+        description: editingSettlement ? undefined : 'Solo los gastos seleccionados fueron marcados como liquidados.',
       })
     } catch (error) {
       pushToast({ type: 'error', title: editingSettlement ? 'No pudimos actualizar la liquidacion' : 'No pudimos liquidar', description: (error as Error).message })
@@ -589,7 +603,29 @@ export function FinancesPage() {
         <form className="space-y-4" onSubmit={expenseForm.handleSubmit(onExpenseSubmit)}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Monto" type="number" step="0.01" error={expenseForm.formState.errors.amount?.message} {...expenseForm.register('amount', { valueAsNumber: true })} />
-            <Input label="Categoria" error={expenseForm.formState.errors.category?.message} {...expenseForm.register('category')} />
+            {categories.length ? (
+              <Select
+                label="Categoria"
+                error={expenseForm.formState.errors.category?.message ?? expenseForm.formState.errors.category_id?.message}
+                value={categoryId ?? ''}
+                onChange={(event) => {
+                  const category = categories.find((item) => item.id === event.target.value)
+                  expenseForm.setValue('category_id', category?.id, { shouldValidate: true })
+                  expenseForm.setValue('category', category?.name ?? '', { shouldValidate: true })
+                  expenseForm.setValue('subcategory_id', undefined, { shouldValidate: true })
+                }}
+              >
+                <option value="">Seleccionar</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Input label="Categoria" error={expenseForm.formState.errors.category?.message} {...expenseForm.register('category')} />
+            )}
+            {categories.length ? <input type="hidden" {...expenseForm.register('category')} /> : null}
           </div>
           <Input label="Descripcion" error={expenseForm.formState.errors.description?.message} {...expenseForm.register('description')} />
           <div className="grid gap-4 sm:grid-cols-2">
@@ -602,6 +638,42 @@ export function FinancesPage() {
               ))}
             </Select>
           </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select label="Cuenta" error={expenseForm.formState.errors.account_id?.message} {...expenseForm.register('account_id')}>
+              <option value="">Seleccionar cuenta</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </Select>
+            <Select label="Subcategoria" {...expenseForm.register('subcategory_id')} disabled={!filteredSubcategories.length}>
+              <option value="">Sin subcategoria</option>
+              {filteredSubcategories.map((subcategory) => (
+                <option key={subcategory.id} value={subcategory.id}>
+                  {subcategory.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {!accounts.length ? (
+            <div className="rounded-2xl border border-dashed border-blush-200 bg-blush-50/60 p-3 text-sm text-stone-600 dark:border-white/10 dark:bg-white/5 dark:text-stone-300">
+              <p className="font-semibold text-stone-950 dark:text-white">Primero creen una cuenta</p>
+              <p className="mt-1">Esto permite saber de donde salio el dinero.</p>
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-3"
+                onClick={() => {
+                  void createDefaultAccount().then((account) => {
+                    if (account) expenseForm.setValue('account_id', account.id, { shouldValidate: true })
+                  })
+                }}
+              >
+                Crear cuenta efectivo
+              </Button>
+            </div>
+          ) : null}
           <section className="space-y-3 rounded-2xl bg-white/65 p-4 dark:bg-white/5">
             <div>
               <h3 className="font-semibold text-stone-950 dark:text-white">Division del gasto</h3>
@@ -734,6 +806,62 @@ export function FinancesPage() {
               ))}
             </Select>
           </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Fecha de liquidacion" type="date" error={settlementForm.formState.errors.settlement_date?.message} {...settlementForm.register('settlement_date')} />
+            <Input label="Metodo de pago" placeholder="Efectivo, transferencia..." error={settlementForm.formState.errors.payment_method?.message} {...settlementForm.register('payment_method')} />
+          </div>
+          <section className="space-y-3 rounded-2xl bg-white/65 p-4 dark:bg-white/5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-stone-950 dark:text-white">Gastos a saldar</h3>
+                <p className="text-sm text-stone-500 dark:text-stone-400">La liquidacion solo marca como saldados los gastos seleccionados.</p>
+              </div>
+              {linkedExpenseIds.length ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-10 min-h-10"
+                  onClick={() => settlementForm.setValue('amount', roundMoney(selectedSettlementExpensesTotal), { shouldValidate: true })}
+                >
+                  Usar {formatMoney(selectedSettlementExpensesTotal)}
+                </Button>
+              ) : null}
+            </div>
+            <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+              {openExpenses.map((expense) => {
+                const checked = linkedExpenseIds.includes(expense.id)
+                return (
+                  <label key={expense.id} className="flex cursor-pointer items-center gap-3 rounded-2xl bg-white/70 p-3 text-sm dark:bg-white/5">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-blush-500"
+                      checked={checked}
+                      onChange={(event) => {
+                        const next = event.target.checked
+                          ? [...linkedExpenseIds, expense.id]
+                          : linkedExpenseIds.filter((expenseId) => expenseId !== expense.id)
+                        settlementForm.setValue('linked_expense_ids', next, { shouldValidate: true })
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-stone-950 dark:text-white">{expense.category}</span>
+                      <span className="block text-stone-500 dark:text-stone-400">
+                        {formatMoney(Number(expense.amount))} · {formatDate(expense.date)}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+              {!openExpenses.length ? (
+                <p className="rounded-2xl border border-dashed border-white/70 bg-white/45 p-3 text-sm text-stone-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-stone-400">
+                  No hay gastos abiertos para saldar.
+                </p>
+              ) : null}
+            </div>
+            {settlementForm.formState.errors.linked_expense_ids?.message ? (
+              <p className="text-xs font-medium text-red-500">{settlementForm.formState.errors.linked_expense_ids.message}</p>
+            ) : null}
+          </section>
           <Input label="Nota" error={settlementForm.formState.errors.note?.message} {...settlementForm.register('note')} />
           <Button className="w-full" disabled={busy}>
             {editingSettlement ? 'Guardar cambios' : 'Registrar liquidacion'}

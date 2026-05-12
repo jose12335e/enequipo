@@ -77,16 +77,26 @@ export interface SplitDetails {
 export interface Expense {
   id: string
   couple_id: string
+  title?: string | null
   amount: number
+  currency?: string
   category: string
+  category_id?: string | null
+  subcategory_id?: string | null
+  account_id?: string | null
   description: string | null
   date: string
   paid_by: string
+  assigned_to?: string | null
+  status?: 'pending' | 'posted' | 'cancelled' | 'refunded' | 'settled'
   split_type: SplitType
   split_details: SplitDetails | null
+  is_shared?: boolean
   settled: boolean
   created_by: string
   created_at: string
+  updated_at?: string
+  deleted_at?: string | null
 }
 
 export interface SavingsGoal {
@@ -108,7 +118,92 @@ export interface DebtSettlement {
   from_user: string
   to_user: string
   settled_at: string
+  payment_method?: string | null
+  settlement_date?: string
+  linked_expense_ids?: string[]
+  created_by?: string | null
   note: string | null
+  created_at: string
+  updated_at?: string
+  deleted_at?: string | null
+}
+
+export type FinanceAccountType = 'efectivo' | 'banco' | 'tarjeta_credito' | 'tarjeta_debito' | 'ahorro' | 'prestamo' | 'otro'
+export type FinanceTransactionType = 'expense' | 'income' | 'transfer' | 'settlement' | 'saving' | 'refund' | 'debt_payment' | 'adjustment' | 'recurring_expense'
+export type FinanceTransactionStatus = 'pending' | 'posted' | 'cancelled' | 'refunded' | 'settled'
+
+export interface FinanceAccount {
+  id: string
+  couple_id: string
+  owner_user_id: string | null
+  name: string
+  type: FinanceAccountType
+  initial_balance: number
+  current_balance: number
+  currency: string
+  color: string | null
+  icon: string | null
+  is_shared: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceCategory {
+  id: string
+  couple_id: string
+  name: string
+  kind: 'expense' | 'income' | 'transfer' | 'saving' | 'debt'
+  color: string | null
+  icon: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceSubcategory {
+  id: string
+  couple_id: string
+  category_id: string
+  name: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FinanceTransaction {
+  id: string
+  couple_id: string
+  created_by: string | null
+  paid_by: string | null
+  assigned_to: string | null
+  type: FinanceTransactionType
+  amount: number
+  currency: string
+  category_id: string | null
+  subcategory_id: string | null
+  account_id: string | null
+  title: string
+  description: string | null
+  transaction_date: string
+  status: FinanceTransactionStatus
+  split_type: SplitType | null
+  split_data: SplitDetails | null
+  is_shared: boolean
+  is_settled: boolean
+  source_expense_id: string | null
+  source_settlement_id: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export interface SettlementExpense {
+  settlement_id: string
+  expense_id: string
+  amount_applied: number
   created_at: string
 }
 

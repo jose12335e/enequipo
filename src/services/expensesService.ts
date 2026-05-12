@@ -62,6 +62,7 @@ export async function listExpenses(coupleId: string) {
     .from('expenses')
     .select('*')
     .eq('couple_id', coupleId)
+    .is('deleted_at', null)
     .order('date', { ascending: false })
   if (error) throw error
   return data
@@ -72,9 +73,78 @@ export async function listSettlements(coupleId: string) {
     .from('debt_settlements')
     .select('*')
     .eq('couple_id', coupleId)
+    .is('deleted_at', null)
     .order('settled_at', { ascending: false })
   if (error) throw error
   return data
+}
+
+async function upsertExpenseTransaction(expense: Expense) {
+  const { error } = await supabase
+    .from('finance_transactions')
+    .upsert(
+      {
+        couple_id: expense.couple_id,
+        created_by: expense.created_by,
+        paid_by: expense.paid_by,
+        assigned_to: expense.assigned_to ?? null,
+        type: 'expense',
+        amount: expense.amount,
+        currency: expense.currency ?? 'DOP',
+        category_id: expense.category_id ?? null,
+        subcategory_id: expense.subcategory_id ?? null,
+        account_id: expense.account_id ?? null,
+        title: expense.title ?? expense.category,
+        description: expense.description,
+        transaction_date: expense.date,
+        status: expense.status ?? 'posted',
+        split_type: expense.split_type,
+        split_data: expense.split_details,
+        is_shared: expense.is_shared ?? true,
+        is_settled: expense.settled,
+        source_expense_id: expense.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'source_expense_id' },
+    )
+  if (error) throw error
+}
+
+async function upsertSettlementTransaction(settlement: {
+  id: string
+  couple_id: string
+  created_by?: string | null
+  from_user: string
+  to_user: string
+  amount: number
+  note: string | null
+  settlement_date?: string
+  settled_at: string
+  created_at: string
+}) {
+  const { error } = await supabase
+    .from('finance_transactions')
+    .upsert(
+      {
+        couple_id: settlement.couple_id,
+        created_by: settlement.created_by ?? null,
+        paid_by: settlement.from_user,
+        assigned_to: settlement.to_user,
+        type: 'settlement',
+        amount: settlement.amount,
+        currency: 'DOP',
+        title: 'Liquidacion de deuda',
+        description: settlement.note,
+        transaction_date: settlement.settlement_date ?? settlement.settled_at.slice(0, 10),
+        status: 'settled',
+        is_shared: true,
+        is_settled: true,
+        source_settlement_id: settlement.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'source_settlement_id' },
+    )
+  if (error) throw error
 }
 
 export async function createExpense(
@@ -90,17 +160,25 @@ export async function createExpense(
     .insert({
       couple_id: coupleId,
       amount: input.amount,
+      title: input.description || input.category,
+      currency: 'DOP',
       category: input.category,
+      category_id: input.category_id || null,
+      subcategory_id: input.subcategory_id || null,
+      account_id: input.account_id,
       description: input.description || null,
       date: input.date,
       paid_by: input.paid_by,
       split_type: splitPayload.split_type,
       split_details: splitPayload.split_details,
+      status: 'posted',
+      is_shared: true,
       created_by: userId,
     })
     .select()
     .single()
   if (error) throw error
+  await upsertExpenseTransaction(data)
   return data
 }
 
@@ -111,17 +189,24 @@ export async function updateExpense(id: string, userId: string, partnerId: strin
     .from('expenses')
     .update({
       amount: input.amount,
+      title: input.description || input.category,
+      currency: 'DOP',
       category: input.category,
+      category_id: input.category_id || null,
+      subcategory_id: input.subcategory_id || null,
+      account_id: input.account_id,
       description: input.description || null,
       date: input.date,
       paid_by: input.paid_by,
       split_type: splitPayload.split_type,
       split_details: splitPayload.split_details,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', id)
     .select()
     .single()
   if (error) throw error
+  await upsertExpenseTransaction(data)
   return data
 }
 
@@ -132,21 +217,44 @@ export async function updateSettlement(id: string, input: SettlementInput) {
       amount: input.amount,
       from_user: input.from_user,
       to_user: input.to_user,
+      payment_method: input.payment_method || null,
+      settlement_date: input.settlement_date,
+      linked_expense_ids: input.linked_expense_ids,
       note: input.note || null,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', id)
     .select()
     .single()
   if (error) throw error
+  const { error: deleteLinksError } = await supabase.from('settlement_expenses').delete().eq('settlement_id', id)
+  if (deleteLinksError) throw deleteLinksError
+  const { error: linksError } = await supabase.from('settlement_expenses').insert(
+    input.linked_expense_ids.map((expenseId) => ({
+      settlement_id: id,
+      expense_id: expenseId,
+      amount_applied: 0,
+    })),
+  )
+  if (linksError) throw linksError
+  await upsertSettlementTransaction(data)
   return data
 }
 
 export async function deleteExpense(id: string) {
-  const { error } = await supabase.from('expenses').delete().eq('id', id)
+  const { error } = await supabase
+    .from('expenses')
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', id)
   if (error) throw error
+
+  await supabase
+    .from('finance_transactions')
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('source_expense_id', id)
 }
 
-export async function createSettlement(coupleId: string, input: SettlementInput) {
+export async function createSettlement(coupleId: string, userId: string, input: SettlementInput) {
   const { data, error } = await supabase
     .from('debt_settlements')
     .insert({
@@ -154,19 +262,40 @@ export async function createSettlement(coupleId: string, input: SettlementInput)
       amount: input.amount,
       from_user: input.from_user,
       to_user: input.to_user,
-      settled_at: new Date().toISOString(),
+      payment_method: input.payment_method || null,
+      settlement_date: input.settlement_date,
+      linked_expense_ids: input.linked_expense_ids,
+      created_by: userId,
+      settled_at: new Date(`${input.settlement_date}T12:00:00`).toISOString(),
       note: input.note || null,
     })
     .select()
     .single()
   if (error) throw error
 
+  const { error: linksError } = await supabase.from('settlement_expenses').insert(
+    input.linked_expense_ids.map((expenseId) => ({
+      settlement_id: data.id,
+      expense_id: expenseId,
+      amount_applied: 0,
+    })),
+  )
+  if (linksError) throw linksError
+
   const { error: settleError } = await supabase
     .from('expenses')
-    .update({ settled: true })
+    .update({ settled: true, status: 'settled', updated_at: new Date().toISOString() })
     .eq('couple_id', coupleId)
-    .eq('settled', false)
+    .in('id', input.linked_expense_ids)
   if (settleError) throw settleError
+
+  const { error: transactionUpdateError } = await supabase
+    .from('finance_transactions')
+    .update({ is_settled: true, status: 'settled', updated_at: new Date().toISOString() })
+    .in('source_expense_id', input.linked_expense_ids)
+  if (transactionUpdateError) throw transactionUpdateError
+
+  await upsertSettlementTransaction(data)
 
   return data
 }
