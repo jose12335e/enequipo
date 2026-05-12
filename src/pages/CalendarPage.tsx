@@ -22,8 +22,8 @@ import { EmptyState } from '../components/EmptyState'
 import { Input, Select, Textarea } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
-import { eventSchema, type EventInput } from '../lib/validations/events'
-import { createEvent, deleteEvent, listEvents, subscribeToEvents, updateEvent, updateEventStatus } from '../services/eventsService'
+import { eventSchema, type EventFormInput, type EventInput } from '../lib/validations/events'
+import { createEventSeries, deleteEvent, listEvents, subscribeToEvents, updateEvent, updateEventStatus } from '../services/eventsService'
 import { useToastStore } from '../store/toastStore'
 import type { EventItem, EventStatus } from '../types/app'
 import { formatDateTime } from '../utils/format'
@@ -114,13 +114,14 @@ export function CalendarPage() {
     reset,
     setValue,
     control,
-  } = useForm<EventInput>({
+  } = useForm<EventFormInput, unknown, EventInput>({
     resolver: zodResolver(eventSchema),
     mode: 'onChange',
-    defaultValues: { is_shared: true, color: '#ef9fb5', actor_type: 'user' },
+    defaultValues: { is_shared: true, color: '#ef9fb5', actor_type: 'user', repeat_frequency: 'none', repeat_count: 1 },
   })
   const startAtField = useWatch({ control, name: 'start_at' })
   const endAtField = useWatch({ control, name: 'end_at' })
+  const repeatFrequency = useWatch({ control, name: 'repeat_frequency' })
 
   function selectedDayValue() {
     return format(selectedDay, 'yyyy-MM-dd')
@@ -147,6 +148,8 @@ export function CalendarPage() {
       color: '#ef9fb5',
       is_shared: true,
       actor_type: 'user',
+      repeat_frequency: 'none',
+      repeat_count: 1,
     })
     setOpen(true)
   }
@@ -165,6 +168,8 @@ export function CalendarPage() {
       color: event.color ?? '#ef9fb5',
       is_shared: event.is_shared,
       actor_type: event.actor_type ?? 'user',
+      repeat_frequency: 'none',
+      repeat_count: 1,
     })
     setOpen(true)
   }
@@ -193,9 +198,13 @@ export function CalendarPage() {
         setEvents((current) => current.map((event) => (event.id === updated.id ? (updated as EventItem) : event)))
         pushToast({ type: 'success', title: 'Evento actualizado' })
       } else {
-        const created = await createEvent(couple.id, profile.id, input)
-        setEvents((current) => [...current, created as EventItem])
-        pushToast({ type: 'success', title: 'Evento creado' })
+        const created = await createEventSeries(couple.id, profile.id, input)
+        setEvents((current) => [...current, ...created])
+        pushToast({
+          type: 'success',
+          title: created.length > 1 ? 'Eventos creados' : 'Evento creado',
+          description: created.length > 1 ? `${created.length} semanas programadas.` : undefined,
+        })
       }
       reset({
         title: '',
@@ -206,6 +215,8 @@ export function CalendarPage() {
         color: '#ef9fb5',
         is_shared: true,
         actor_type: 'user',
+        repeat_frequency: 'none',
+        repeat_count: 1,
       })
       closeEventModal()
     } catch (error) {
@@ -778,6 +789,24 @@ export function CalendarPage() {
             <option value="user">Lo agrego yo</option>
             <option value="couple">Lo agregamos ambos</option>
           </Select>
+          {!editingEvent ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select label="Repeticion" error={errors.repeat_frequency?.message} {...register('repeat_frequency')}>
+                <option value="none">No repetir</option>
+                <option value="weekly">Cada semana</option>
+              </Select>
+              {repeatFrequency === 'weekly' ? (
+                <Input
+                  label="Cantidad de semanas"
+                  type="number"
+                  min={1}
+                  max={52}
+                  error={errors.repeat_count?.message}
+                  {...register('repeat_count', { valueAsNumber: true })}
+                />
+              ) : null}
+            </div>
+          ) : null}
           <label className="flex items-center gap-3 rounded-2xl bg-blush-50/70 p-3 text-sm font-medium text-stone-700 dark:bg-white/5 dark:text-stone-200">
             <input type="checkbox" className="h-4 w-4 accent-blush-500" {...register('is_shared')} />
             Compartido

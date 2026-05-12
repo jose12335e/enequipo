@@ -3,6 +3,29 @@ import type { EventInput } from '../lib/validations/events'
 import { supabase } from '../lib/supabase'
 import type { EventItem, EventStatus } from '../types/app'
 
+function buildEventInsert(coupleId: string, userId: string, input: EventInput, weekOffset = 0) {
+  const startAt = new Date(input.start_at)
+  startAt.setDate(startAt.getDate() + weekOffset * 7)
+
+  const endAt = input.end_at ? new Date(input.end_at) : null
+  if (endAt) endAt.setDate(endAt.getDate() + weekOffset * 7)
+
+  return {
+    couple_id: coupleId,
+    title: input.title,
+    description: input.description || null,
+    start_at: startAt.toISOString(),
+    end_at: endAt ? endAt.toISOString() : null,
+    location: input.location || null,
+    color: input.color || '#ef9fb5',
+    is_shared: input.is_shared,
+    actor_type: input.actor_type ?? 'user',
+    status: 'pending',
+    status_note: null,
+    created_by: userId,
+  }
+}
+
 export async function listEvents(coupleId: string) {
   const { data, error } = await supabase
     .from('events')
@@ -16,24 +39,19 @@ export async function listEvents(coupleId: string) {
 export async function createEvent(coupleId: string, userId: string, input: EventInput) {
   const { data, error } = await supabase
     .from('events')
-    .insert({
-      couple_id: coupleId,
-      title: input.title,
-      description: input.description || null,
-      start_at: new Date(input.start_at).toISOString(),
-      end_at: input.end_at ? new Date(input.end_at).toISOString() : null,
-      location: input.location || null,
-      color: input.color || '#ef9fb5',
-      is_shared: input.is_shared,
-      actor_type: input.actor_type ?? 'user',
-      status: 'pending',
-      status_note: null,
-      created_by: userId,
-    })
+    .insert(buildEventInsert(coupleId, userId, input))
     .select()
     .single()
   if (error) throw error
   return data
+}
+
+export async function createEventSeries(coupleId: string, userId: string, input: EventInput) {
+  const count = input.repeat_frequency === 'weekly' ? Math.max(1, Math.min(input.repeat_count ?? 1, 52)) : 1
+  const rows = Array.from({ length: count }, (_, index) => buildEventInsert(coupleId, userId, input, index))
+  const { data, error } = await supabase.from('events').insert(rows).select()
+  if (error) throw error
+  return data as EventItem[]
 }
 
 export async function updateEventStatus(id: string, status: EventStatus, statusNote?: string | null) {
