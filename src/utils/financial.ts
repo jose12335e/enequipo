@@ -83,7 +83,9 @@ export function monthlyTotalsByCategory(expenses: Expense[], date = new Date()) 
     if (!isSameMonth(parseISO(expense.date), date)) continue
     totals.set(expense.category, roundMoney((totals.get(expense.category) ?? 0) + Number(expense.amount)))
   }
-  return Array.from(totals.entries()).map(([category, total]) => ({ category, total }))
+  return Array.from(totals.entries())
+    .map(([category, total]) => ({ category, total }))
+    .sort((a, b) => b.total - a.total)
 }
 
 export function topMonthlySpender(expenses: Expense[], date = new Date()) {

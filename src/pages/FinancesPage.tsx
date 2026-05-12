@@ -1,5 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CircleDollarSign, HandCoins, Pencil, Plus, ReceiptText, Trash2 } from 'lucide-react'
+import { addMonths, format, isSameMonth, parseISO, startOfMonth, subMonths } from 'date-fns'
+import { es } from 'date-fns/locale'
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
+  HandCoins,
+  Pencil,
+  PiggyBank,
+  Plus,
+  ReceiptText,
+  Target,
+  Trash2,
+  WalletCards,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
@@ -10,19 +25,19 @@ import { Input, Select } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { ListSkeleton } from '../components/Skeleton'
 import { StatCard } from '../components/StatCard'
+import { useCoupleRequired } from '../hooks/useCoupleRequired'
 import { expenseSchema, settlementSchema, type ExpenseFormInput, type ExpenseInput, type SettlementInput } from '../lib/validations/expenses'
 import { recordPartnerActivity } from '../services/activityNotificationsService'
 import { createExpense, createSettlement, deleteExpense, listExpenses, listSettlements, subscribeToExpenses, updateExpense, updateSettlement } from '../services/expensesService'
 import { useToastStore } from '../store/toastStore'
 import type { DebtSettlement, Expense, UserProfile } from '../types/app'
+import { expenseActivity, markModuleActivitySeen } from '../utils/activity'
 import { calculateNetBalance, monthlyTotalsByCategory, topMonthlySpender } from '../utils/financial'
 import { formatDate, formatMoney } from '../utils/format'
-import { useCoupleRequired } from '../hooks/useCoupleRequired'
-import { expenseActivity, markModuleActivitySeen } from '../utils/activity'
 
 function nameFor(id: string | null | undefined, profile: UserProfile | null, partner: UserProfile | null) {
   if (!id) return 'Usuario no disponible'
-  if (id === profile?.id) return profile.full_name ?? 'Tú'
+  if (id === profile?.id) return profile.full_name ?? 'Tu'
   if (id === partner?.id) return partner.full_name ?? 'Tu pareja'
   return 'Usuario no disponible'
 }
@@ -60,6 +75,18 @@ function splitLabelForExpense(expense: Expense, profile: UserProfile | null, par
   return `${profilePercent}/${partnerPercent}`
 }
 
+function isExpenseInMonth(expense: Expense, month: Date) {
+  return isSameMonth(parseISO(expense.date), month)
+}
+
+function isSettlementInMonth(settlement: DebtSettlement, month: Date) {
+  return isSameMonth(parseISO(settlement.settled_at), month)
+}
+
+function monthLabel(month: Date) {
+  return format(month, 'MMMM yyyy', { locale: es })
+}
+
 function expenseFormValues(expense: Expense, profile: UserProfile | null, partner: UserProfile | null): ExpenseInput {
   const amount = Number(expense.amount)
   const profileShare = profile ? shareAmountFor(expense, profile.id) : amount / 2
@@ -94,6 +121,7 @@ export function FinancesPage() {
   const [busy, setBusy] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [editingSettlement, setEditingSettlement] = useState<DebtSettlement | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState(() => startOfMonth(new Date()))
 
   const members = useMemo(() => [profile, partner].filter(Boolean) as UserProfile[], [partner, profile])
   const expenseForm = useForm<ExpenseFormInput, unknown, ExpenseInput>({
@@ -139,8 +167,16 @@ export function FinancesPage() {
     if (!profile || !partner) return null
     return calculateNetBalance(expenses, profile.id, partner.id, settlements)
   }, [expenses, partner, profile, settlements])
-  const chartData = useMemo(() => monthlyTotalsByCategory(expenses), [expenses])
-  const topSpender = useMemo(() => topMonthlySpender(expenses), [expenses])
+  const monthExpenses = useMemo(() => expenses.filter((expense) => isExpenseInMonth(expense, selectedMonth)), [expenses, selectedMonth])
+  const monthSettlements = useMemo(() => settlements.filter((settlement) => isSettlementInMonth(settlement, selectedMonth)), [settlements, selectedMonth])
+  const chartData = useMemo(() => monthlyTotalsByCategory(expenses, selectedMonth), [expenses, selectedMonth])
+  const topSpender = useMemo(() => topMonthlySpender(expenses, selectedMonth), [expenses, selectedMonth])
+  const monthTotal = useMemo(() => monthExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0), [monthExpenses])
+  const openExpenses = useMemo(() => expenses.filter((expense) => !expense.settled), [expenses])
+  const monthOpenTotal = useMemo(() => monthExpenses.filter((expense) => !expense.settled).reduce((sum, expense) => sum + Number(expense.amount), 0), [monthExpenses])
+  const biggestCategory = chartData[0] ?? null
+  const hasMonthData = monthExpenses.length > 0
+
   const splitSummary = useMemo(() => {
     if (!profile || !partner || !expenseAmount || expenseAmount <= 0) return null
 
@@ -342,7 +378,7 @@ export function FinancesPage() {
     return (
       <EmptyState
         title="Vincula tu pareja para usar finanzas"
-        description="Sin pareja vinculada no se permite crear gastos compartidos. Al vincular, verán balance, liquidaciones y totales del mes."
+        description="Sin pareja vinculada no se permite crear gastos compartidos. Al vincular, veran balance, liquidaciones y totales del mes."
         actionLabel="Ir a pareja"
         onAction={() => navigate('/app/couple')}
       />
@@ -352,14 +388,14 @@ export function FinancesPage() {
   const balanceText =
     balance && balance.amount > 0
       ? `${nameFor(balance.debtorId, profile, partner)} debe ${formatMoney(balance.amount)} a ${nameFor(balance.creditorId, profile, partner)}`
-      : 'Están a mano'
+      : 'Estan a mano'
 
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-stone-950 dark:text-white">Finanzas</h1>
-          <p className="mt-1 text-stone-600 dark:text-stone-300">Gastos y liquidaciones son conceptos separados.</p>
+          <p className="mt-1 text-stone-600 dark:text-stone-300">Gastos, balances y liquidaciones en peso dominicano.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button variant="secondary" icon={<HandCoins size={18} />} onClick={openSettlementModal}>
@@ -375,49 +411,128 @@ export function FinancesPage() {
         <ListSkeleton />
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-3">
+          <article className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white/75 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04] lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blush-100 text-blush-700 dark:bg-blush-900/30 dark:text-blush-200">
+                <CalendarDays size={22} />
+              </div>
+              <div>
+                <p className="text-sm text-stone-500 dark:text-stone-400">Vista mensual</p>
+                <h2 className="text-xl font-semibold capitalize text-stone-950 dark:text-white">{monthLabel(selectedMonth)}</h2>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" className="h-10 min-h-10 px-3" onClick={() => setSelectedMonth((month) => subMonths(month, 1))} aria-label="Mes anterior">
+                <ChevronLeft size={18} />
+              </Button>
+              <Button variant="secondary" className="h-10 min-h-10" onClick={() => setSelectedMonth(startOfMonth(new Date()))}>
+                Mes actual
+              </Button>
+              <Button variant="secondary" className="h-10 min-h-10 px-3" onClick={() => setSelectedMonth((month) => addMonths(month, 1))} aria-label="Mes siguiente">
+                <ChevronRight size={18} />
+              </Button>
+            </div>
+          </article>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Balance actual" value={balanceText} icon={<CircleDollarSign size={22} />} />
-            <StatCard label="Gastos del mes" value={formatMoney(chartData.reduce((sum, item) => sum + item.total, 0))} icon={<ReceiptText size={22} />} />
+            <StatCard label="Gastos del mes" value={formatMoney(monthTotal)} icon={<ReceiptText size={22} />} />
+            <StatCard label="Abierto por liquidar" value={formatMoney(monthOpenTotal)} icon={<WalletCards size={22} />} />
             <StatCard
-              label="Quién gastó más este mes"
+              label="Quien gasto mas"
               value={topSpender ? `${nameFor(topSpender[0], profile, partner)} · ${formatMoney(topSpender[1])}` : 'Sin gastos'}
               icon={<HandCoins size={22} />}
             />
           </div>
 
-          <article className="rounded-2xl border border-white/70 bg-white/75 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-            <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Total mensual por categoría</h2>
-            <div className="mt-4 h-72">
-              {chartData.length ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-                    <XAxis dataKey="category" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => formatMoney(Number(value))} />
-                    <Bar dataKey="total" fill="#c85072" radius={[12, 12, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="text-sm text-stone-500 dark:text-stone-400">Sin gastos este mes.</p>
-              )}
-            </div>
-          </article>
+          <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+            <article className="rounded-2xl border border-white/70 bg-white/75 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Total mensual por categoria</h2>
+                  <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Comparen donde se esta yendo el dinero este mes.</p>
+                </div>
+                {biggestCategory ? (
+                  <span className="rounded-full bg-blush-100 px-3 py-1 text-sm font-semibold text-blush-700 dark:bg-blush-900/30 dark:text-blush-100">
+                    Mayor: {biggestCategory.category}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-4 h-80">
+                {chartData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                      <XAxis dataKey="category" tickLine={false} axisLine={false} />
+                      <YAxis width={88} tickFormatter={(value) => formatMoney(Number(value)).replace('DOP', 'RD$')} tickLine={false} axisLine={false} />
+                      <Tooltip formatter={(value) => formatMoney(Number(value))} cursor={{ fill: 'rgba(200,80,114,0.08)' }} />
+                      <Bar dataKey="total" fill="#c85072" radius={[12, 12, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-white/70 bg-white/45 p-6 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                    <ReceiptText className="text-blush-500" size={34} />
+                    <h3 className="mt-3 text-lg font-semibold text-stone-950 dark:text-white">Aun no hay gastos este mes</h3>
+                    <p className="mt-2 max-w-md text-sm text-stone-500 dark:text-stone-400">
+                      Registra el primer gasto para activar el grafico, el balance y la lectura de quien pago mas.
+                    </p>
+                    <Button className="mt-5" icon={<Plus size={18} />} onClick={openExpenseModal}>
+                      Registrar gasto
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-white/70 bg-white/75 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+              <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Lectura rapida</h2>
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl bg-white/70 p-4 dark:bg-white/5">
+                  <div className="flex items-center gap-2 text-blush-600 dark:text-blush-200">
+                    <PiggyBank size={18} />
+                    <p className="font-semibold">Control del mes</p>
+                  </div>
+                  <p className="mt-2 text-sm text-stone-600 dark:text-stone-300">
+                    {hasMonthData
+                      ? `Tienen ${monthExpenses.length} gasto${monthExpenses.length === 1 ? '' : 's'} registrado${monthExpenses.length === 1 ? '' : 's'} en ${monthLabel(selectedMonth)}.`
+                      : 'Cuando registren gastos, aqui veran senales utiles sin tener que calcular nada.'}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-white/70 p-4 dark:bg-white/5">
+                  <div className="flex items-center gap-2 text-blush-600 dark:text-blush-200">
+                    <Target size={18} />
+                    <p className="font-semibold">Siguiente mejora</p>
+                  </div>
+                  <p className="mt-2 text-sm text-stone-600 dark:text-stone-300">
+                    Presupuestos por categoria y gastos recurrentes seran el proximo paso natural para que Finanzas avise antes de pasarse.
+                  </p>
+                </div>
+              </div>
+            </article>
+          </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <article className="rounded-2xl border border-white/70 bg-white/75 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Gastos</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Gastos de {monthLabel(selectedMonth)}</h2>
+                <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-stone-500 dark:bg-white/10 dark:text-stone-300">
+                  {monthExpenses.length}
+                </span>
+              </div>
               <div className="mt-4 space-y-3">
-                {expenses.map((expense) => (
+                {monthExpenses.map((expense) => (
                   <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 p-3 dark:bg-white/5">
                     <div>
-                      <p className="font-semibold text-stone-950 dark:text-white">{expense.category}</p>
-                      <p className="text-sm text-stone-600 dark:text-stone-300">
-                        {formatMoney(Number(expense.amount))} · {nameFor(expense.paid_by, profile, partner)} · {formatDate(expense.date)}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-stone-950 dark:text-white">{expense.category}</p>
+                        <span className="rounded-full bg-blush-100 px-2.5 py-1 text-xs font-semibold text-blush-700 dark:bg-blush-900/30 dark:text-blush-100">
+                          {splitLabelForExpense(expense, profile, partner)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+                        {formatMoney(Number(expense.amount))} · pago {nameFor(expense.paid_by, profile, partner)} · {formatDate(expense.date)}
                       </p>
-                      <p className="text-xs text-stone-500 dark:text-stone-400">
-                        Division {splitLabelForExpense(expense, profile, partner)} · {expense.settled ? 'Liquidado' : 'Abierto'}
-                      </p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400">{expense.settled ? 'Liquidado' : 'Abierto'}</p>
                     </div>
                     <div className="flex gap-2">
                       <Button variant="ghost" className="h-9 min-h-9 w-9 rounded-full px-0" onClick={() => openEditExpenseModal(expense)} aria-label="Editar gasto">
@@ -429,19 +544,28 @@ export function FinancesPage() {
                     </div>
                   </div>
                 ))}
-                {!expenses.length ? <p className="text-sm text-stone-500 dark:text-stone-400">Sin gastos registrados.</p> : null}
+                {!monthExpenses.length ? (
+                  <div className="rounded-2xl border border-dashed border-white/70 bg-white/45 p-4 text-sm text-stone-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-stone-400">
+                    No hay gastos en este mes. Usa el selector de mes o registra uno nuevo.
+                  </div>
+                ) : null}
               </div>
             </article>
 
             <article className="rounded-2xl border border-white/70 bg-white/75 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Historial de liquidaciones</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-stone-950 dark:text-white">Liquidaciones del mes</h2>
+                <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-stone-500 dark:bg-white/10 dark:text-stone-300">
+                  Pendientes: {openExpenses.length}
+                </span>
+              </div>
               <div className="mt-4 space-y-3">
-                {settlements.map((settlement) => (
+                {monthSettlements.map((settlement) => (
                   <div key={settlement.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 p-3 dark:bg-white/5">
                     <div>
                       <p className="font-semibold text-stone-950 dark:text-white">{formatMoney(Number(settlement.amount))}</p>
                       <p className="text-sm text-stone-600 dark:text-stone-300">
-                        {nameFor(settlement.from_user, profile, partner)} pagó a {nameFor(settlement.to_user, profile, partner)}
+                        {nameFor(settlement.from_user, profile, partner)} pago a {nameFor(settlement.to_user, profile, partner)}
                       </p>
                       <p className="text-xs text-stone-500 dark:text-stone-400">{formatDate(settlement.settled_at)}</p>
                     </div>
@@ -450,7 +574,11 @@ export function FinancesPage() {
                     </Button>
                   </div>
                 ))}
-                {!settlements.length ? <p className="text-sm text-stone-500 dark:text-stone-400">Sin liquidaciones.</p> : null}
+                {!monthSettlements.length ? (
+                  <div className="rounded-2xl border border-dashed border-white/70 bg-white/45 p-4 text-sm text-stone-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-stone-400">
+                    Sin liquidaciones en este mes. Cuando se paguen una deuda, quedara aqui el historial.
+                  </div>
+                ) : null}
               </div>
             </article>
           </div>
@@ -461,12 +589,12 @@ export function FinancesPage() {
         <form className="space-y-4" onSubmit={expenseForm.handleSubmit(onExpenseSubmit)}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Monto" type="number" step="0.01" error={expenseForm.formState.errors.amount?.message} {...expenseForm.register('amount', { valueAsNumber: true })} />
-            <Input label="Categoría" error={expenseForm.formState.errors.category?.message} {...expenseForm.register('category')} />
+            <Input label="Categoria" error={expenseForm.formState.errors.category?.message} {...expenseForm.register('category')} />
           </div>
-          <Input label="Descripción" error={expenseForm.formState.errors.description?.message} {...expenseForm.register('description')} />
+          <Input label="Descripcion" error={expenseForm.formState.errors.description?.message} {...expenseForm.register('description')} />
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Fecha" type="date" error={expenseForm.formState.errors.date?.message} {...expenseForm.register('date')} />
-            <Select label="Pagó" error={expenseForm.formState.errors.paid_by?.message} {...expenseForm.register('paid_by')}>
+            <Select label="Pago" error={expenseForm.formState.errors.paid_by?.message} {...expenseForm.register('paid_by')}>
               {members.map((member) => (
                 <option key={member.id} value={member.id}>
                   {nameFor(member.id, profile, partner)}

@@ -14,9 +14,9 @@ export function formatDateTime(value: string) {
 }
 
 export function formatMoney(amount: number) {
-  return new Intl.NumberFormat('es-BO', {
+  return new Intl.NumberFormat('es-DO', {
     style: 'currency',
-    currency: 'BOB',
+    currency: 'DOP',
     maximumFractionDigits: 2,
   }).format(amount)
 }
